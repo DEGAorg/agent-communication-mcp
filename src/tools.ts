@@ -109,7 +109,13 @@ export class ToolHandler {
       }
     } catch (error) {
       logger.error(`Error handling tool call for ${toolName}:`, error);
-      throw error;
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Error handling tool call for ${toolName}: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -128,6 +134,7 @@ export class ToolHandler {
 
   private async handleRegisterService(args: Omit<Service, 'id' | 'agent_id'>) {
     try {
+      logger.info('Validating service data:', args);
       // Validate the service data
       validateService(args);
 
@@ -140,11 +147,13 @@ export class ToolHandler {
         );
       }
 
+      logger.info('Registering service with agent ID:', agentId);
       const service = await this.supabaseService.registerService({
         agent_id: agentId,
         ...args
       });
 
+      logger.info('Service registered successfully:', service);
       return {
         content: [
           {
@@ -155,13 +164,13 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
+      logger.error('Error registering service:', error);
       if (error instanceof McpError) {
         throw error;
       }
-      logger.error('Error registering service:', error);
       throw new McpError(
         ErrorCode.InternalError,
-        'Failed to register service'
+        `Failed to register service: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

@@ -13,7 +13,9 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "auth:setup": "tsx src/cli/auth.ts setup",
     "auth:check": "tsx src/cli/auth.ts check",
-    "auth:retry": "tsx src/cli/auth.ts retry"
+    "auth:retry": "tsx src/cli/auth.ts retry",
+    "service:register": "tsx src/cli/service.ts",
+    "service:register:test": "tsx src/cli/service.ts --test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",

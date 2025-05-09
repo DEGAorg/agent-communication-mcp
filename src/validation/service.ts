@@ -99,11 +99,6 @@ export function validateServiceType(type: string): void {
   if (!VALIDATION_RULES.type.pattern.test(type)) {
     throw new ServiceValidationError('Service type can only contain uppercase letters, numbers, and underscores');
   }
-
-  // If the type is not in the suggested list, log a warning but don't reject it
-  if (!SUGGESTED_SERVICE_TYPES.includes(type as any)) {
-    logger.warn(`Service type "${type}" is not in the suggested list. Suggested types are: ${SUGGESTED_SERVICE_TYPES.join(', ')}`);
-  }
 }
 
 export function validateServiceDescription(description: string): void {
@@ -152,7 +147,6 @@ export function validateService(service: {
   description: string;
 }): void {
   validateServiceName(service.name);
-  validateServiceType(service.type);
   validateServiceType(service.type);
   validateServiceDescription(service.description);
   validateServiceExample(service.example);
