@@ -47,3 +47,4 @@ coverage/
 *.pem
 *.key
 *.cert 
+session/auth.json 
