@@ -2,6 +2,7 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { SupabaseService } from './supabase/service.js';
 import { EncryptionService } from './encryption/service.js';
 import { logger } from './logger.js';
+import { Service } from './supabase/config.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -12,6 +13,22 @@ export const ALL_TOOLS = [
       type: 'object',
       properties: {},
       required: []
+    }
+  },
+  {
+    name: 'registerService',
+    description: 'Register a new service',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        service_id: { type: 'string' },
+        type: { type: 'string' },
+        example: { type: 'string' },
+        price: { type: 'number' },
+        description: { type: 'string' }
+      },
+      required: ['name', 'service_id', 'type', 'price', 'description']
     }
   },
   {
@@ -70,6 +87,9 @@ export class ToolHandler {
         case 'listServices':
           return await this.handleListServices();
         
+        case 'registerService':
+          return await this.handleRegisterService(toolArgs);
+        
         case 'servicePayment':
           return await this.handleServicePayment(toolArgs);
         
@@ -98,6 +118,40 @@ export class ToolHandler {
         {
           type: 'text',
           text: JSON.stringify(services, null, 2),
+          mimeType: 'application/json'
+        }
+      ]
+    };
+  }
+
+  private async handleRegisterService(args: Omit<Service, 'id' | 'agent_id'>) {
+    const { name, service_id, type, example, price, description } = args;
+    
+    if (!name || !service_id || !type || !price || !description) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'Missing required parameters for service registration'
+      );
+    }
+
+    // TODO: Get the current agent's ID from the context
+    const agentId = 'current-agent-id'; // This should be replaced with actual agent ID
+
+    const service = await this.supabaseService.registerService({
+      agent_id: agentId,
+      name,
+      service_id,
+      type,
+      example,
+      price,
+      description
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(service, null, 2),
           mimeType: 'application/json'
         }
       ]
