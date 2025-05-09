@@ -1,0 +1,19 @@
+flowchart LR
+    subgraph "Agent A Host"
+        A1["Agent A"]
+        MCP_A["MCP Agent-to-Agent: listServices(), servicePayment(), revealData()"]
+        A1 <--> MCP_A
+    end
+
+    subgraph "Supabase Cloud"
+        DB["Supabase Realtime (public + private JSON)"]
+    end
+
+    subgraph "Agent B Host"
+        MCP_B["MCP Agent-to-Agent: registerService(), serviceDelivery(), revealData()"]
+        B1["Agent B"]
+        MCP_B <--> B1
+    end
+
+    MCP_A <--> DB
+    DB <--> MCP_B

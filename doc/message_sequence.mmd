@@ -1,0 +1,27 @@
+sequenceDiagram
+    participant UserA
+    participant MCP_A as MCP Server A
+    participant Supabase as Supabase PubSub
+    participant MCP_B as MCP Server B
+    participant MCP_Auditor as MCP Auditor
+    participant UserB
+
+    UserA->>MCP_A: Send message with public + private
+    MCP_A->>MCP_A: Generate AES key
+    MCP_A->>MCP_A: Encrypt private with AES key → ciphertext
+    MCP_A->>MCP_A: Encrypt AES key with pubB → encKeyForB
+    MCP_A->>MCP_A: Encrypt AES key with pubAuditor → encKeyForAuditor
+    MCP_A->>MCP_A: Generate zkProof of encryption + schema
+    MCP_A->>Supabase: Publish(public, ciphertext, encKeyForB, encKeyForAuditor, zkProof, metadata)
+
+    Supabase-->>MCP_B: Relay(public, encrypted private)
+    MCP_B->>MCP_B: Verify zkProof
+    MCP_B->>MCP_B: Decrypt encKeyForB → AES key
+    MCP_B->>MCP_B: Decrypt ciphertext with AES key → private
+    MCP_B->>UserB: Show public + private
+
+    Supabase-->>MCP_Auditor: Relay(public, encrypted private)
+    MCP_Auditor->>MCP_Auditor: Verify zkProof
+    MCP_Auditor->>MCP_Auditor: Decrypt encKeyForAuditor → AES key
+    MCP_Auditor->>MCP_Auditor: Decrypt ciphertext with AES key → private
+    MCP_Auditor->>MCP_Auditor: Log audit access (public only if unauthorized)

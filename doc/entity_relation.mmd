@@ -1,0 +1,32 @@
+erDiagram
+    AGENT {
+        uuid id PK
+        text name
+        text public_key
+        timestamp registered_at
+    }
+
+    SERVICE {
+        uuid id PK
+        uuid agent_id FK
+        text name
+        text service_id
+        text type
+        text example
+        numeric price
+        text description
+    }
+
+    MESSAGE {
+        uuid id PK
+        uuid sender_agent_id FK
+        uuid recipient_agent_id FK
+        jsonb public
+        jsonb private
+        timestamp created_at
+        boolean read
+    }
+
+    AGENT ||--o{ SERVICE : provides
+    AGENT ||--o{ MESSAGE : sends
+    AGENT ||--o{ MESSAGE : receives
