@@ -13,7 +13,6 @@ export interface Service {
   id: string;
   agent_id: string;
   name: string;
-  service_id: string;
   type: string;
   example: string;
   price: number;

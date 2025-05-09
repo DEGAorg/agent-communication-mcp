@@ -146,14 +146,13 @@ export function validateServicePrice(price: number): void {
 
 export function validateService(service: {
   name: string;
-  service_id: string;
   type: string;
   example?: string;
   price: number;
   description: string;
 }): void {
   validateServiceName(service.name);
-  validateServiceId(service.service_id);
+  validateServiceType(service.type);
   validateServiceType(service.type);
   validateServiceDescription(service.description);
   validateServiceExample(service.example);

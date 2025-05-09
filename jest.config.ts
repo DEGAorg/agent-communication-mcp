@@ -1,10 +1,11 @@
 export default {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
       useESM: true,
-    }],
+      tsconfig: 'tsconfig.json'
+    }]
   },
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
@@ -21,4 +22,13 @@ export default {
     '!src/**/*.d.ts'
   ],
   coverageReporters: ['text', 'lcov', 'html'],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  transformIgnorePatterns: [
+    'node_modules/(?!(@modelcontextprotocol)/)'
+  ],
+  globals: {
+    'ts-jest': {
+      useESM: true,
+    },
+  }
 }; 
