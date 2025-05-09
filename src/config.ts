@@ -1,7 +1,24 @@
-import { config as dotenvConfig } from 'dotenv';
+// Load environment variables
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Load environment variables from .env file
-dotenvConfig();
+// Calculate root directory path for finding .env file
+// Use let for compatibility with testing environments
+let rootDir;
+
+try {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  rootDir = path.resolve(__dirname, '..');
+} catch (err) {
+  // Fallback for test environments that might not support import.meta.url
+  rootDir = process.cwd();
+}
+
+// Load environment variables from .env file if present
+// In production, these will be provided by Docker or the host environment
+dotenv.config({ path: path.join(rootDir, '.env') });
 
 export const config = {
   // Supabase configuration

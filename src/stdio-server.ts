@@ -1,3 +1,7 @@
+// dotenv
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -8,7 +12,6 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { config } from './config.js';
 import { logger } from './logger.js';
 import { ToolHandler } from './tools.js';
 import { AuthService } from './supabase/auth.js';
@@ -190,7 +193,7 @@ async function main() {
 
     // Start server
     await server.start();
-    logger.info('Server started successfully');
+    logger.info('Main server started successfully');
 
     // Handle process exit signals
     setupExitHandlers(server);

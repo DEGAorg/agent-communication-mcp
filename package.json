@@ -2,7 +2,7 @@
   "packageManager": "yarn@4.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "start": "node --experimental-specifier-resolution=node dist/server.js",
     "dev": "tsx src/server.ts",
     "dev:stdio": "tsx src/stdio-server.ts",
