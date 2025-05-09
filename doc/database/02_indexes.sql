@@ -2,7 +2,6 @@
 
 -- Services indexes
 CREATE INDEX idx_services_agent_id ON services(agent_id);
-CREATE INDEX idx_services_service_id ON services(service_id);
 CREATE INDEX idx_services_type ON services(type);
 
 -- Messages indexes

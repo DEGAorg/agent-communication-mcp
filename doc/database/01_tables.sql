@@ -14,7 +14,6 @@ CREATE TABLE services (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  service_id TEXT NOT NULL,
   type TEXT NOT NULL,
   example TEXT,
   price NUMERIC NOT NULL,

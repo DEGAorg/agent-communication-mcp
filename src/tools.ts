@@ -3,6 +3,8 @@ import { SupabaseService } from './supabase/service.js';
 import { EncryptionService } from './encryption/service.js';
 import { logger } from './logger.js';
 import { Service } from './supabase/config.js';
+import { validateService } from './validation/service.js';
+import { AuthService } from './supabase/auth.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -22,13 +24,12 @@ export const ALL_TOOLS = [
       type: 'object',
       properties: {
         name: { type: 'string' },
-        service_id: { type: 'string' },
         type: { type: 'string' },
         example: { type: 'string' },
         price: { type: 'number' },
         description: { type: 'string' }
       },
-      required: ['name', 'service_id', 'type', 'price', 'description']
+      required: ['name', 'type', 'price', 'description']
     }
   },
   {
@@ -71,7 +72,8 @@ export const ALL_TOOLS = [
 export class ToolHandler {
   constructor(
     private readonly supabaseService: SupabaseService,
-    private readonly encryptionService: EncryptionService
+    private readonly encryptionService: EncryptionService,
+    private readonly authService: AuthService = AuthService.getInstance()
   ) {}
 
   /**
@@ -125,37 +127,43 @@ export class ToolHandler {
   }
 
   private async handleRegisterService(args: Omit<Service, 'id' | 'agent_id'>) {
-    const { name, service_id, type, example, price, description } = args;
-    
-    if (!name || !service_id || !type || !price || !description) {
+    try {
+      // Validate the service data
+      validateService(args);
+
+      // Get the current user ID from the auth service
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'No authenticated agent found'
+        );
+      }
+
+      const service = await this.supabaseService.registerService({
+        agent_id: agentId,
+        ...args
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(service, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      if (error instanceof McpError) {
+        throw error;
+      }
+      logger.error('Error registering service:', error);
       throw new McpError(
-        ErrorCode.InvalidParams,
-        'Missing required parameters for service registration'
+        ErrorCode.InternalError,
+        'Failed to register service'
       );
     }
-
-    // TODO: Get the current agent's ID from the context
-    const agentId = 'current-agent-id'; // This should be replaced with actual agent ID
-
-    const service = await this.supabaseService.registerService({
-      agent_id: agentId,
-      name,
-      service_id,
-      type,
-      example,
-      price,
-      description
-    });
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(service, null, 2),
-          mimeType: 'application/json'
-        }
-      ]
-    };
   }
 
   private async handleServicePayment(args: { serviceId: string; amount: string }) {
