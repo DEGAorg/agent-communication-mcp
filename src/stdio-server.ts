@@ -8,12 +8,12 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
 import { logger } from './logger.js';
-
-// Initialize Supabase client
-const supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
+import { ToolHandler } from './tools.js';
+import { AuthService } from './supabase/auth.js';
+import { SupabaseService } from './supabase/service.js';
+import { EncryptionService } from './encryption/service.js';
 
 /**
  * Format error for logging
@@ -31,6 +31,12 @@ function formatError(error: unknown): string {
 export function createServer() {
   logger.info('Creating Agent Communication MCP server');
 
+  // Initialize services
+  const authService = AuthService.getInstance();
+  const supabaseService = new SupabaseService();
+  const encryptionService = new EncryptionService();
+  const toolHandler = new ToolHandler(supabaseService, encryptionService);
+
   // Create server instance
   const server = new Server(
     {
@@ -46,7 +52,7 @@ export function createServer() {
   );
 
   // Set up request handlers
-  setupRequestHandlers(server);
+  setupRequestHandlers(server, toolHandler);
 
   // Create STDIO transport
   const transport = new StdioServerTransport();
@@ -54,6 +60,9 @@ export function createServer() {
   return {
     start: async () => {
       try {
+        // Ensure we have a valid session
+        await authService.getSession();
+        
         await server.connect(transport);
         logger.info('Server started successfully');
       } catch (error) {
@@ -64,6 +73,7 @@ export function createServer() {
     stop: async () => {
       try {
         await server.close();
+        await toolHandler.cleanup();
         logger.info('Server stopped');
       } catch (error) {
         logger.error('Error stopping server:', error);
@@ -91,7 +101,7 @@ function handleError(context: string, error: unknown): never {
 /**
  * Set up server request handlers
  */
-function setupRequestHandlers(server: Server) {
+function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
   // Handle tool calls
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
@@ -99,8 +109,7 @@ function setupRequestHandlers(server: Server) {
       const toolArgs = request.params.arguments;
 
       logger.info(`Tool call received: ${toolName}`);
-      // TODO: Implement tool handling logic
-      return { result: 'Tool call received' };
+      return await toolHandler.handleToolCall(toolName, toolArgs);
     } catch (error) {
       return handleError('handling tool call', error);
     }
@@ -138,8 +147,7 @@ function setupRequestHandlers(server: Server) {
   // Handle tool listing
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     try {
-      // TODO: Implement tool listing logic
-      return { tools: [] };
+      return { tools: toolHandler.getAvailableTools() };
     } catch (error) {
       return handleError('listing tools', error);
     }
