@@ -10,7 +10,10 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint . --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "auth:setup": "tsx src/cli/auth.ts setup",
+    "auth:check": "tsx src/cli/auth.ts check",
+    "auth:retry": "tsx src/cli/auth.ts retry"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
