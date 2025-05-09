@@ -17,6 +17,7 @@ import { ToolHandler } from './tools.js';
 import { AuthService } from './supabase/auth.js';
 import { SupabaseService } from './supabase/service.js';
 import { EncryptionService } from './encryption/service.js';
+import { handleListResources, handleReadResource } from './resources.js';
 
 /**
  * Format error for logging
@@ -121,8 +122,7 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
   // Handle resource listing
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
     try {
-      // TODO: Implement resource listing logic
-      return { resources: [] };
+      return { resources: handleListResources() };
     } catch (error) {
       return handleError('listing resources', error);
     }
@@ -132,15 +132,14 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     try {
       const resourceUri = request.params.uri;
-      // TODO: Implement resource reading logic
+      const resource = handleReadResource(resourceUri);
+      
       return {
-        contents: [
-          {
-            uri: resourceUri,
-            mimeType: 'application/json',
-            text: JSON.stringify({ message: 'Resource placeholder' }),
-          },
-        ],
+        contents: [{
+          uri: resourceUri,
+          mimeType: resource.mimeType || "application/json",
+          text: JSON.stringify(resource)
+        }]
       };
     } catch (error) {
       handleError('reading resource', error);
