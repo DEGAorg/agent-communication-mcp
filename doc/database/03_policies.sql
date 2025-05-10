@@ -10,7 +10,7 @@ CREATE POLICY agents_select_policy ON agents
   );
 
 CREATE POLICY agents_insert_policy ON agents
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (id = auth.uid());
 
 CREATE POLICY agents_update_policy ON agents
   FOR UPDATE USING (id = auth.uid());

@@ -5,6 +5,7 @@ import { logger } from './logger.js';
 import { Service } from './supabase/config.js';
 import { validateService } from './validation/service.js';
 import { AuthService } from './supabase/auth.js';
+import { StateManager } from './state/manager.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -70,11 +71,15 @@ export const ALL_TOOLS = [
 ];
 
 export class ToolHandler {
+  private stateManager: StateManager;
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly encryptionService: EncryptionService,
     private readonly authService: AuthService = AuthService.getInstance()
-  ) {}
+  ) {
+    this.stateManager = StateManager.getInstance();
+  }
 
   /**
    * Get list of available tools
@@ -85,6 +90,9 @@ export class ToolHandler {
 
   async handleToolCall(toolName: string, toolArgs: any): Promise<any> {
     try {
+      // Ensure system is ready before handling any tool calls, with recovery attempt
+      await this.stateManager.ensureReadyWithRecovery();
+
       switch (toolName) {
         case 'listServices':
           return await this.handleListServices();
@@ -109,6 +117,15 @@ export class ToolHandler {
       }
     } catch (error) {
       logger.error(`Error handling tool call for ${toolName}:`, error);
+      
+      // If it's a system not ready error, provide more specific error code
+      if (error instanceof Error && error.message.includes('System not ready')) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          error.message
+        );
+      }
+      
       if (error instanceof McpError) {
         throw error;
       }

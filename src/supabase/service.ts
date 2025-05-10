@@ -9,6 +9,20 @@ export class SupabaseService {
     this.setupRealtimeSubscriptions();
   }
 
+  async initialize(): Promise<void> {
+    try {
+      // Test connection
+      const { data, error } = await supabase.from('agents').select('count').limit(1);
+      if (error) {
+        throw error;
+      }
+      logger.info('Supabase connection initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize Supabase connection:', error);
+      throw error;
+    }
+  }
+
   private setupRealtimeSubscriptions() {
     this.messageChannel = supabase
       .channel('messages')
@@ -28,14 +42,17 @@ export class SupabaseService {
   }
 
   // Agent operations
-  async registerAgent(agent: Omit<Agent, 'id' | 'registered_at'>): Promise<Agent> {
+  async registerAgent(agent: Omit<Agent, 'registered_at'>): Promise<Agent> {
     const { data, error } = await supabase
       .from(TABLES.AGENTS)
       .insert([agent])
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      logger.error('Error registering agent:', error);
+      throw error;
+    }
     return data;
   }
 
@@ -44,9 +61,12 @@ export class SupabaseService {
       .from(TABLES.AGENTS)
       .select()
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      logger.error('Error getting agent:', error);
+      throw error;
+    }
     return data;
   }
 

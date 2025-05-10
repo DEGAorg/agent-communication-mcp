@@ -2,6 +2,7 @@ import { supabase } from './config.js';
 import { logger } from '../logger.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { SupabaseService } from './service.js';
 
 export class AuthService {
   private static instance: AuthService;
@@ -9,6 +10,7 @@ export class AuthService {
   private readonly SESSION_FILE: string;
   private isInitializing: boolean = false;
   private renewalInterval: NodeJS.Timeout | null = null;
+  private supabaseService: SupabaseService;
 
   private constructor() {
     // Set up session file path in project root
@@ -21,8 +23,24 @@ export class AuthService {
       fs.mkdirSync(sessionDir, { mode: 0o700 }); // Secure directory permissions
     }
 
+    // Initialize Supabase service
+    this.supabaseService = new SupabaseService();
+  }
+
+  static getInstance(): AuthService {
+    if (!AuthService.instance) {
+      AuthService.instance = new AuthService();
+    }
+    return AuthService.instance;
+  }
+
+  /**
+   * Initialize the auth service
+   * This should be called before any other operations
+   */
+  async initialize(): Promise<void> {
     // Initialize session
-    this.initializeFromEnv();
+    await this.initializeFromEnv();
     
     // Start periodic session renewal check
     this.startSessionRenewalCheck();
@@ -58,13 +76,6 @@ export class AuthService {
     }
   }
 
-  static getInstance(): AuthService {
-    if (!AuthService.instance) {
-      AuthService.instance = new AuthService();
-    }
-    return AuthService.instance;
-  }
-
   private async initializeFromEnv() {
     const email = process.env.MCP_AUTH_EMAIL;
     if (!email) {
@@ -81,9 +92,15 @@ export class AuthService {
     logger.info('No valid session found. Starting new authentication flow...');
     // If no valid session and not already initializing, start OTP flow
     if (!this.isInitializing) {
-      this.isInitializing = true;
-      await this.signInWithOtp(email);
-      this.isInitializing = false;
+      try {
+        this.isInitializing = true;
+        await this.signInWithOtp(email);
+        // Note: We don't set isInitializing to false here because we need to wait for OTP verification
+        // The flag will be cleared in verifyOtp after successful authentication
+      } catch (error) {
+        this.isInitializing = false;
+        throw error;
+      }
     }
   }
 
@@ -118,6 +135,10 @@ export class AuthService {
       }
 
       this.currentSession = session;
+
+      // Register agent if needed
+      await this.registerAgent();
+
       return true;
     } catch (error) {
       logger.warn('Error loading session:', error);
@@ -172,11 +193,13 @@ export class AuthService {
       });
 
       if (error) {
+        this.isInitializing = false;
         logger.error('Error sending OTP:', error);
         throw error;
       }
 
       logger.info('OTP sent! Please check your email for the verification code.');
+      // Note: We keep isInitializing true until verifyOtp is called
     } catch (error) {
       this.isInitializing = false;
       logger.error('Authentication failed:', error);
@@ -190,6 +213,10 @@ export class AuthService {
    * @param code The OTP code received via email
    */
   async verifyOtp(email: string, code: string): Promise<void> {
+    if (!this.isInitializing) {
+      throw new Error('No OTP authentication in progress');
+    }
+
     try {
       const { data: { session }, error } = await supabase.auth.verifyOtp({
         email,
@@ -207,6 +234,9 @@ export class AuthService {
         // Save the new session
         await this.saveSession();
         logger.info('Successfully authenticated!');
+
+        // Register agent after successful authentication
+        await this.registerAgent();
       } else {
         throw new Error('No session received after OTP verification');
       }
@@ -215,6 +245,44 @@ export class AuthService {
       throw error;
     } finally {
       this.isInitializing = false;
+    }
+  }
+
+  /**
+   * Register the agent in the database
+   */
+  public async registerAgent(): Promise<void> {
+    try {
+      const agentName = process.env.AGENT_NAME || 'default_agent';
+      const publicKey = process.env.AGENT_PUBLIC_KEY;
+      const userId = this.currentSession?.user?.id;
+
+      if (!userId) {
+        throw new Error('No authenticated user found');
+      }
+
+      if (!publicKey) {
+        throw new Error('AGENT_PUBLIC_KEY environment variable is required for agent registration');
+      }
+
+      // Check if agent is already registered
+      const existingAgent = await this.supabaseService.getAgent(userId);
+      if (existingAgent) {
+        logger.info('Agent already registered');
+        return;
+      }
+
+      // Register new agent with the user's ID
+      await this.supabaseService.registerAgent({
+        id: userId, // Use the authenticated user's ID
+        name: agentName,
+        public_key: publicKey
+      });
+
+      logger.info('Agent registered successfully');
+    } catch (error) {
+      logger.error('Failed to register agent:', error);
+      throw error;
     }
   }
 

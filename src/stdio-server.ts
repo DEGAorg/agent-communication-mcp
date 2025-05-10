@@ -14,9 +14,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './logger.js';
 import { ToolHandler } from './tools.js';
-import { AuthService } from './supabase/auth.js';
-import { SupabaseService } from './supabase/service.js';
-import { EncryptionService } from './encryption/service.js';
+import { StateManager } from './state/manager.js';
 import { handleListResources, handleReadResource } from './resources.js';
 
 /**
@@ -35,11 +33,13 @@ function formatError(error: unknown): string {
 export function createServer() {
   logger.info('Creating Agent Communication MCP server');
 
-  // Initialize services
-  const authService = AuthService.getInstance();
-  const supabaseService = new SupabaseService();
-  const encryptionService = new EncryptionService();
-  const toolHandler = new ToolHandler(supabaseService, encryptionService);
+  // Initialize state manager
+  const stateManager = StateManager.getInstance();
+  const toolHandler = new ToolHandler(
+    stateManager.getSupabaseService(),
+    stateManager.getEncryptionService(),
+    stateManager.getAuthService()
+  );
 
   // Create server instance
   const server = new Server(
@@ -64,8 +64,8 @@ export function createServer() {
   return {
     start: async () => {
       try {
-        // Ensure we have a valid session
-        await authService.getSession();
+        // Initialize system state
+        await stateManager.initialize();
         
         await server.connect(transport);
         logger.info('Server started successfully');
@@ -77,7 +77,7 @@ export function createServer() {
     stop: async () => {
       try {
         await server.close();
-        await toolHandler.cleanup();
+        await stateManager.cleanup();
         logger.info('Server stopped');
       } catch (error) {
         logger.error('Error stopping server:', error);
