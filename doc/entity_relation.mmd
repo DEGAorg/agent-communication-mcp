@@ -18,13 +18,13 @@ erDiagram
     }
 
     MESSAGE {
-        uuid id PK
-        uuid sender_agent_id FK
-        uuid recipient_agent_id FK
-        jsonb public
-        jsonb private
-        timestamp created_at
-        boolean read
+        uuid id PRIMARY KEY,
+        uuid sender_agent_id REFERENCES AGENT(id),
+        uuid recipient_agent_id REFERENCES AGENT(id),
+        jsonb public,        -- queryable public metadata (topic, content.type, etc.)
+        text private,        -- encrypted string (e.g., AES-encrypted JSON string)
+        timestamp created_at DEFAULT now(),
+        boolean read DEFAULT false
     }
 
     AGENT ||--o{ SERVICE : provides
