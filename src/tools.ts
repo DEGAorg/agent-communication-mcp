@@ -313,7 +313,7 @@ export class ToolHandler {
       }
 
       // Create and send the payment notification message
-      const message = createPaymentNotificationMessage(
+      const message = await createPaymentNotificationMessage(
         agentId,
         service.agent_id,
         serviceId,
@@ -410,7 +410,7 @@ export class ToolHandler {
       );
 
       // Create and send the message
-      const message = createMessage(
+      const message = await createMessage(
         service.agent_id, // sender is the service provider
         agentId, // recipient is the current agent
         publicContent

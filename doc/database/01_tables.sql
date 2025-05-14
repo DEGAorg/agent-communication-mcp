@@ -27,7 +27,7 @@ CREATE TABLE messages (
   sender_agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
   recipient_agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
   public JSONB NOT NULL,
-  private TEXT NOT NULL,
+  private JSONB NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   read BOOLEAN DEFAULT FALSE
 );

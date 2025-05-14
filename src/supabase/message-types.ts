@@ -60,11 +60,23 @@ export interface MessagePublic {
   content: MessageContent;
 }
 
+export interface EncryptedMessage {
+  encryptedMessage: {
+    nonce: string;
+    ciphertext: string;
+    tag: string;
+  };
+  encryptedKeys: {
+    recipient: string;
+    auditor: string;
+  };
+}
+
 export interface Message {
   sender_agent_id: string;
   recipient_agent_id: string;
   public: MessagePublic;
-  private: Record<string, any>;
+  private: EncryptedMessage;
 }
 
 // Type guard functions

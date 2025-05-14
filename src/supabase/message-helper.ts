@@ -7,9 +7,9 @@ import {
   TRANSACTION_TYPES,
   MESSAGE_STATUS,
   MESSAGE_PURPOSE,
-  MessageStatus,
-  MessagePurpose
+  MessagePurpose,
 } from './message-types.js';
+import { EncryptionService } from '../encryption/service.js';
 
 export function createMessageMetadata(purpose?: MessagePurpose): Message['public']['content']['metadata'] {
   return {
@@ -43,28 +43,45 @@ export function createMessagePublic(
   };
 }
 
-export function createMessage(
+export async function createMessage(
   senderId: string,
   recipientId: string,
   publicContent: MessagePublic,
   privateContent: Record<string, any> = {}
-): Message {
+): Promise<Message> {
+  const encryptionService = new EncryptionService();
+  
+  // Get the sender's private key and recipient's public key
+  const senderPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
+  const recipientPublicKey = Buffer.from(process.env.AGENT_PUBLIC_KEY!, 'base64');
+  
+  // Encrypt the private content
+  const { encryptedMessage, encryptedKeys } = await encryptionService.encryptMessageForRecipients(
+    JSON.stringify(privateContent),
+    recipientPublicKey,
+    recipientPublicKey, // For now, we're using the same key for auditor
+    senderPrivateKey
+  );
+
   return {
     sender_agent_id: senderId,
     recipient_agent_id: recipientId,
     public: publicContent,
-    private: privateContent
+    private: {
+      encryptedMessage,
+      encryptedKeys
+    }
   };
 }
 
 // Specific message creators
-export function createPaymentNotificationMessage(
+export async function createPaymentNotificationMessage(
   senderId: string,
   recipientId: string,
   serviceId: string,
   amount: string,
   serviceName: string
-): Message {
+): Promise<Message> {
   const content = createMessageContent(
     CONTENT_TYPES.TRANSACTION,
     {
@@ -83,5 +100,5 @@ export function createPaymentNotificationMessage(
     serviceId
   );
 
-  return createMessage(senderId, recipientId, publicContent);
+  return await createMessage(senderId, recipientId, publicContent);
 } 
