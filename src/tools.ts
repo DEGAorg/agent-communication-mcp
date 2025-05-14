@@ -6,6 +6,7 @@ import { Service } from './supabase/config.js';
 import { validateService } from './validation/service.js';
 import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
+import { createPaymentNotificationMessage } from './supabase/message-helper.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -201,8 +202,60 @@ export class ToolHandler {
       );
     }
 
-    // TODO: Implement payment logic
-    throw new Error('Not implemented: Service payment');
+    try {
+      // Get the current user ID from the auth service
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'No authenticated agent found'
+        );
+      }
+
+      // Get service details to find the service provider
+      const service = await this.supabaseService.getServiceById(serviceId);
+      if (!service) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Service with ID ${serviceId} not found`
+        );
+      }
+
+      // Create and send the payment notification message
+      const message = createPaymentNotificationMessage(
+        agentId,
+        service.agent_id,
+        serviceId,
+        amount,
+        service.name
+      );
+
+      await this.supabaseService.sendMessage(message);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'success',
+              message: 'Payment notification sent successfully',
+              serviceId,
+              amount
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error('Error handling service payment:', error);
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to process service payment: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   private async handleServiceDelivery(args: { serviceId: string; data: any }) {

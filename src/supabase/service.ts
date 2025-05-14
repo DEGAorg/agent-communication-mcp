@@ -91,6 +91,20 @@ export class SupabaseService {
     return data;
   }
 
+  async getServiceById(serviceId: string): Promise<Service | null> {
+    const { data, error } = await supabase
+      .from(TABLES.SERVICES)
+      .select()
+      .eq('id', serviceId)
+      .maybeSingle();
+
+    if (error) {
+      logger.error('Error getting service:', error);
+      throw error;
+    }
+    return data;
+  }
+
   // Message operations
   async sendMessage(message: Omit<Message, 'id' | 'created_at' | 'read'>): Promise<Message> {
     const { data, error } = await supabase
