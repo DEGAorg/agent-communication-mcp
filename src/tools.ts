@@ -7,6 +7,7 @@ import { validateService } from './validation/service.js';
 import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
 import { createPaymentNotificationMessage } from './supabase/message-helper.js';
+import { ServiceContentStorage } from './storage/service-content.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -32,6 +33,23 @@ export const ALL_TOOLS = [
         description: { type: 'string' }
       },
       required: ['name', 'type', 'price', 'description']
+    }
+  },
+  {
+    name: 'storeServiceContent',
+    description: 'Store content for a service that will be delivered to customers',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        serviceId: { type: 'string' },
+        content: { type: 'object' },
+        version: { type: 'string' },
+        tags: { 
+          type: 'array',
+          items: { type: 'string' }
+        }
+      },
+      required: ['serviceId', 'content', 'version']
     }
   },
   {
@@ -100,6 +118,9 @@ export class ToolHandler {
         
         case 'registerService':
           return await this.handleRegisterService(toolArgs);
+        
+        case 'storeServiceContent':
+          return await this.handleStoreServiceContent(toolArgs);
         
         case 'servicePayment':
           return await this.handleServicePayment(toolArgs);
@@ -189,6 +210,75 @@ export class ToolHandler {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to register service: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private async handleStoreServiceContent(args: { 
+    serviceId: string; 
+    content: Record<string, any>; 
+    version: string;
+    tags?: string[];
+  }) {
+    const { serviceId, content, version, tags = [] } = args;
+
+    try {
+      // Get the current user ID from the auth service
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'No authenticated agent found'
+        );
+      }
+
+      // Verify the service exists and belongs to the agent
+      const service = await this.supabaseService.getServiceById(serviceId);
+      if (!service) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Service with ID ${serviceId} not found`
+        );
+      }
+
+      if (service.agent_id !== agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'You can only store content for your own services'
+        );
+      }
+
+      // Store the service content locally
+      const serviceContentStorage = ServiceContentStorage.getInstance();
+      const serviceContent = await serviceContentStorage.storeContent({
+        service_id: serviceId,
+        agent_id: agentId,
+        content,
+        version,
+        tags
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'success',
+              message: 'Service content stored successfully',
+              serviceContent
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error('Error storing service content:', error);
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to store service content: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
