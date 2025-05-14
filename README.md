@@ -1,6 +1,15 @@
 # Agent Communication MCP Server
 
-A Model Context Protocol (MCP) server implementation that enables communication between AI agents using Supabase for real-time messaging.
+A Model Context Protocol (MCP) server implementation that enables secure, agent-to-agent communication for AI networks using Supabase for real-time messaging. The system provides encrypted message exchange, service discovery, and privacy-preserving data delivery.
+
+## Documentation
+
+- [System Overview](doc/documentation.md) - Detailed system architecture and features
+- [Message Format](doc/message.md) - Message structure and format specifications
+- [Cryptography](doc/cryptography.md) - Security and encryption details
+- [Entity Relations](doc/entity_relation.mmd) - Database schema and relationships
+- [Component Diagram](doc/components.mmd) - System component interactions
+- [Message Sequence](doc/message_sequence.mmd) - Message flow diagrams
 
 ## Prerequisites
 

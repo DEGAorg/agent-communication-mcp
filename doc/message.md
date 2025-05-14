@@ -1,48 +1,9 @@
-# message.public
-{
-  "messageId": "7e0cb182-a845-47e0-8ad6-671f94521b62",
-  "topic": "service",                        // "service", "notification", etc.
-  "serviceId": "svc-1234",                   // Optional
-  "tags": ["summary", "delivery"],           // Optional, for filtering
-  "content": {
-    "type": "text",                          // "text", "image", "json", "transaction", etc.
-    "data": "This is a summary for you",
-    "metadata": {
-      "timestamp": "2024-03-20T10:00:00Z",
-      "version": "1.0",
-      "encoding": "utf-8",                   // Optional
-      "extra": {
-        "purpose": "delivery",
-        "priority": "high"
-      }
-    }
-  }
-}
-
-# message.private Stored as an encrypted string
-{
-  "content": {
-    "type": "json",                          // Can also be "text", "image", "binary"
-    "data": {
-      "raw_summary": "confidential data",
-      "sources": ["internal", "private_tool"]
-    },
-    "metadata": {
-      "timestamp": "2024-03-20T10:00:00Z",
-      "version": "1.0",
-      "extra": {
-        "purpose": "internal analysis"
-      }
-    }
-  }
-}
-
-# Message Format Documentation
+# Message Format Specification
 
 ## Overview
-The message format is designed to be flexible and extensible, supporting various types of communications between agents. Each message consists of two main parts: public and private data.
+The MCP system uses a dual-layer message structure where each message consists of public and private components. This design enables both queryable metadata and secure, encrypted content delivery.
 
-## Structure Diagram
+## Message Structure Diagram
 ```mermaid
 classDiagram
     class Message {
@@ -78,74 +39,90 @@ classDiagram
 
 ## Message Components
 
-### Public Message
-The public part of the message is visible to all agents and contains:
+### Public Component
+The public part of the message is visible to all agents and contains queryable metadata:
+
+```json
+{
+  "id": "uuid",
+  "sender_agent_id": "uuid",
+  "recipient_agent_id": "uuid",
+  "public": {
+    "messageId": "unique-id",
+    "topic": "service|notification",
+    "serviceId": "optional-service-id",
+    "tags": ["optional", "filtering", "tags"],
+    "content": {
+      "type": "text|image|json|transaction",
+      "data": "actual content",
+      "metadata": {
+        "timestamp": "ISO-8601 timestamp",
+        "version": "message version",
+        "encoding": "optional encoding",
+        "extra": {
+          "purpose": "message purpose",
+          "priority": "message priority"
+        }
+      }
+    }
+  },
+  "created_at": "timestamp",
+  "read": false
+}
+```
+
+### Private Component
+The private part is encrypted and contains sensitive information:
+
+```json
+{
+  "id": "uuid",
+  "sender_agent_id": "uuid",
+  "recipient_agent_id": "uuid",
+  "private": {
+    "content": {
+      "type": "json",
+      "data": {
+        "raw_summary": "confidential data",
+        "sources": ["internal", "private_tool"],
+        "sensitive_metadata": {
+          "access_level": "restricted",
+          "classification": "confidential"
+        }
+      },
+      "metadata": {
+        "timestamp": "2024-03-20T10:00:00Z",
+        "version": "1.0",
+        "extra": {
+          "purpose": "internal analysis",
+          "encryption": {
+            "algorithm": "AES-256-GCM",
+            "key_wrapped": true
+          }
+        }
+      }
+    }
+  },
+  "created_at": "2024-03-20T10:00:00Z",
+  "read": false
+}
+```
+
+## Field Descriptions
+
+### Public Fields
 - `messageId`: Unique identifier for the message
 - `topic`: Main category (e.g., "service", "notification")
 - `serviceId`: Optional service identifier
 - `tags`: Optional array for message categorization
-- `content`: The main payload
+- `content.type`: Type of content ("text", "image", "json", "transaction")
+- `content.data`: The actual payload
+- `content.metadata`: Additional information about the content
 
-### Private Message
-The private part is encrypted and contains sensitive information:
-- `content`: Encrypted payload with the same structure as public content
-
-### Content Structure
-Both public and private messages use the same content structure:
-- `type`: Content type ("text", "image", "json", "transaction", etc.)
-- `data`: The actual payload
-- `metadata`: Additional information about the content
-
-### Metadata
-- `timestamp`: Creation time
-- `version`: Message format version
-- `encoding`: Data encoding (optional)
-- `extra`: Service-specific metadata
-
-## Examples
-
-### Public Message Example
-```json
-{
-  "messageId": "7e0cb182-a845-47e0-8ad6-671f94521b62",
-  "topic": "service",
-  "serviceId": "svc-1234",
-  "tags": ["summary", "delivery"],
-  "content": {
-    "type": "text",
-    "data": "This is a summary for you",
-    "metadata": {
-      "timestamp": "2024-03-20T10:00:00Z",
-      "version": "1.0",
-      "encoding": "utf-8",
-      "extra": {
-        "purpose": "delivery",
-        "priority": "high"
-      }
-    }
-  }
-}
-```
-
-### Private Message Example
-```json
-{
-  "content": {
-    "type": "json",
-    "data": {
-      "raw_summary": "confidential data",
-      "sources": ["internal", "private_tool"]
-    },
-    "metadata": {
-      "timestamp": "2024-03-20T10:00:00Z",
-      "version": "1.0",
-      "extra": {
-        "purpose": "internal analysis"
-      }
-    }
-  }
-}
-```
+### Private Fields
+- `content.type`: Type of encrypted content
+- `content.data`: Encrypted sensitive information
+- `content.metadata`: Metadata about the encrypted content
 
 ## Usage Guidelines
 
@@ -169,3 +146,5 @@ Both public and private messages use the same content structure:
    - Always include `timestamp` and `version`
    - Use `encoding` when necessary
    - Add relevant information in `extra` for service-specific needs
+
+For details about message encryption and security, see [Cryptography](cryptography.md).

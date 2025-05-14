@@ -29,71 +29,10 @@ flowchart LR
 ```
 
 ### Entity Relationships
-```mermaid
-erDiagram
-    AGENT {
-        uuid id PK
-        text name
-        text public_key
-        timestamp registered_at
-    }
-
-    SERVICE {
-        uuid id PK
-        uuid agent_id FK
-        text name
-        text service_id
-        text type
-        text example
-        numeric price
-        text description
-    }
-
-    MESSAGE {
-        uuid id PRIMARY KEY,
-        uuid sender_agent_id REFERENCES AGENT(id),
-        uuid recipient_agent_id REFERENCES AGENT(id),
-        jsonb public,        -- queryable public metadata (topic, content.type, etc.)
-        text private,        -- encrypted string (e.g., AES-encrypted JSON string)
-        timestamp created_at DEFAULT now(),
-        boolean read DEFAULT false
-    }
-
-    AGENT ||--o{ SERVICE : provides
-    AGENT ||--o{ MESSAGE : sends
-    AGENT ||--o{ MESSAGE : receives
-```
+See [Entity Relations](entity_relation.mmd) for detailed database schema.
 
 ### Message Flow
-```mermaid
-sequenceDiagram
-    participant UserA
-    participant MCP_A as MCP Server A
-    participant Supabase as Supabase PubSub
-    participant MCP_B as MCP Server B
-    participant MCP_Auditor as MCP Auditor
-    participant UserB
-
-    UserA->>MCP_A: Send message with public + private
-    MCP_A->>MCP_A: Generate AES key
-    MCP_A->>MCP_A: Encrypt private with AES key → ciphertext
-    MCP_A->>MCP_A: Encrypt AES key with pubB → encKeyForB
-    MCP_A->>MCP_A: Encrypt AES key with pubAuditor → encKeyForAuditor
-    MCP_A->>MCP_A: Generate zkProof of encryption + schema
-    MCP_A->>Supabase: Publish(public, ciphertext, encKeyForB, encKeyForAuditor, zkProof, metadata)
-
-    Supabase-->>MCP_B: Relay(public, encrypted private)
-    MCP_B->>MCP_B: Verify zkProof
-    MCP_B->>MCP_B: Decrypt encKeyForB → AES key
-    MCP_B->>MCP_B: Decrypt ciphertext with AES key → private
-    MCP_B->>UserB: Show public + private
-
-    Supabase-->>MCP_Auditor: Relay(public, encrypted private)
-    MCP_Auditor->>MCP_Auditor: Verify zkProof
-    MCP_Auditor->>MCP_Auditor: Decrypt encKeyForAuditor → AES key
-    MCP_Auditor->>MCP_Auditor: Decrypt ciphertext with AES key → private
-    MCP_Auditor->>MCP_Auditor: Log audit access (public only if unauthorized)
-```
+See [Message Sequence](message_sequence.mmd) for detailed message flow diagrams.
 
 ## Core Features
 
@@ -151,73 +90,5 @@ sequenceDiagram
     - messageId: string
   - Status: Implementation pending
 
-## Message Structure
-
-The system uses a dual-layer message structure where each message consists of public and private components:
-
-### Public Component (jsonb)
-Contains queryable metadata and non-sensitive information:
-```json
-{
-  "id": "uuid",
-  "sender_agent_id": "uuid",
-  "recipient_agent_id": "uuid",
-  "public": {
-    "messageId": "unique-id",
-    "topic": "service|notification",
-    "serviceId": "optional-service-id",
-    "tags": ["optional", "filtering", "tags"],
-    "content": {
-      "type": "text|image|json|transaction",
-      "data": "actual content",
-      "metadata": {
-        "timestamp": "ISO-8601 timestamp",
-        "version": "message version",
-        "encoding": "optional encoding",
-        "extra": {
-          "purpose": "message purpose",
-          "priority": "message priority"
-        }
-      }
-    }
-  },
-  "created_at": "timestamp",
-  "read": false
-}
-```
-
-### Private Component (encrypted text)
-Contains sensitive information encrypted with AES and wrapped with recipient's public key:
-```json
-{
-  "id": "uuid",
-  "sender_agent_id": "uuid",
-  "recipient_agent_id": "uuid",
-  "private": {
-    "content": {
-      "type": "json",
-      "data": {
-        "raw_summary": "confidential data",
-        "sources": ["internal", "private_tool"],
-        "sensitive_metadata": {
-          "access_level": "restricted",
-          "classification": "confidential"
-        }
-      },
-      "metadata": {
-        "timestamp": "2024-03-20T10:00:00Z",
-        "version": "1.0",
-        "extra": {
-          "purpose": "internal analysis",
-          "encryption": {
-            "algorithm": "AES-256-GCM",
-            "key_wrapped": true
-          }
-        }
-      }
-    }
-  },
-  "created_at": "2024-03-20T10:00:00Z",
-  "read": false
-}
-```
+For detailed message format specifications, see [Message Format](message.md).
+For security and encryption details, see [Cryptography](cryptography.md).
