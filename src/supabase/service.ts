@@ -1,12 +1,26 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase, TABLES, Agent, Service, Message } from './config.js';
 import { logger } from '../logger.js';
+import { MessageHandler } from './message-handler.js';
+import { AuthService } from './auth.js';
 
 export class SupabaseService {
   private messageChannel: RealtimeChannel | null = null;
+  private messageHandler: MessageHandler;
+  private authService: AuthService;
 
   constructor() {
+    this.messageHandler = MessageHandler.getInstance();
+    this.authService = AuthService.getInstance();
     this.setupRealtimeSubscriptions();
+  }
+
+  private getCurrentAgentId(): string {
+    const agentId = this.authService.getCurrentUserId();
+    if (!agentId) {
+      throw new Error('No authenticated agent found');
+    }
+    return agentId;
   }
 
   async initialize(): Promise<void> {
@@ -24,18 +38,28 @@ export class SupabaseService {
   }
 
   private setupRealtimeSubscriptions() {
+    const agentId = this.getCurrentAgentId();
+    
     this.messageChannel = supabase
-      .channel('messages')
+      .channel(`messages:${agentId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: TABLES.MESSAGES,
+          filter: `recipient_agent_id=eq.${agentId}`,
         },
-        (payload) => {
+        async (payload) => {
           logger.info('Message change received:', payload);
-          // TODO: Implement message handling logic
+          try {
+            if (payload.eventType === 'INSERT') {
+              const message = payload.new as Message;
+              await this.messageHandler.handleMessage(message);
+            }
+          } catch (error) {
+            logger.error('Error processing message:', error);
+          }
         }
       )
       .subscribe();

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config.js';
+import { Message as MessageType, MessagePublic } from './message-types.js';
 
 // Database types
 export interface Agent {
@@ -19,12 +20,8 @@ export interface Service {
   description: string;
 }
 
-export interface Message {
+export interface Message extends MessageType {
   id: string;
-  sender_agent_id: string;
-  recipient_agent_id: string;
-  public: Record<string, any>;
-  private: Record<string, any>;
   created_at: string;
   read: boolean;
 }
