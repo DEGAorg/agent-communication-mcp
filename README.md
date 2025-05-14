@@ -33,6 +33,34 @@ MCP_AUTH_POLL_INTERVAL=2000
 MCP_AUTH_MAX_POLL_ATTEMPTS=30
 ```
 
+## Key Management
+
+The system uses X25519 key pairs for secure communication. Each agent needs its own key pair.
+
+### Generate Key Pair
+
+Generate a new X25519 key pair:
+```bash
+yarn keys:generate
+```
+
+This will:
+- Generate a new X25519 key pair
+- Display the public and private keys
+- Provide instructions for adding them to your `.env` file
+
+Add the generated keys to your `.env` file:
+```env
+AGENT_PUBLIC_KEY=your_public_key
+AGENT_PRIVATE_KEY=your_private_key
+```
+
+⚠️ **Security Warning**:
+- Keep your private key secure and never share it
+- Never commit keys to version control
+- Keep a secure backup of your keys
+- Store keys in environment variables or secure key management system
+
 ## Authentication
 
 The MCP server uses Supabase's magic link authentication. Sessions are stored locally in the `session` directory.
