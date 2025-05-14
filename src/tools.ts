@@ -6,8 +6,9 @@ import { Service } from './supabase/config.js';
 import { validateService } from './validation/service.js';
 import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
-import { createPaymentNotificationMessage } from './supabase/message-helper.js';
+import { createPaymentNotificationMessage, createMessageContent, createMessagePublic, createMessage } from './supabase/message-helper.js';
 import { ServiceContentStorage } from './storage/service-content.js';
+import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS } from './supabase/message-types.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -357,8 +358,90 @@ export class ToolHandler {
       );
     }
 
-    // TODO: Implement service delivery logic
-    throw new Error('Not implemented: Service delivery');
+    try {
+      // Get the current user ID from the auth service
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'No authenticated agent found'
+        );
+      }
+
+      // Get service details to find the service provider
+      const service = await this.supabaseService.getServiceById(serviceId);
+      if (!service) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Service with ID ${serviceId} not found`
+        );
+      }
+
+      // Get the stored service content
+      const serviceContentStorage = ServiceContentStorage.getInstance();
+      const serviceContent = await serviceContentStorage.getContent(serviceId);
+      
+      if (!serviceContent) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `No content found for service ${serviceId}`
+        );
+      }
+
+      // Create the delivery message content
+      const content = createMessageContent(
+        CONTENT_TYPES.TRANSACTION,
+        {
+          type: TRANSACTION_TYPES.SERVICE_DELIVERY,
+          status: MESSAGE_STATUS.COMPLETED,
+          service_name: service.name,
+          content: serviceContent.content,
+          version: serviceContent.version,
+          timestamp: new Date().toISOString()
+        },
+        MESSAGE_PURPOSE.SERVICE_DELIVERY
+      );
+
+      // Create the public message content
+      const publicContent = createMessagePublic(
+        MESSAGE_TOPICS.DELIVERY,
+        content,
+        serviceId
+      );
+
+      // Create and send the message
+      const message = createMessage(
+        service.agent_id, // sender is the service provider
+        agentId, // recipient is the current agent
+        publicContent
+      );
+
+      await this.supabaseService.sendMessage(message);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'success',
+              message: 'Service content delivered successfully',
+              serviceId,
+              version: serviceContent.version
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error('Error handling service delivery:', error);
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to deliver service content: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   private async handleRevealData(args: { messageId: string }) {
