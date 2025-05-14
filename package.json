@@ -15,11 +15,15 @@
     "auth:check": "tsx src/cli/auth.ts check",
     "auth:retry": "tsx src/cli/auth.ts retry",
     "service:register": "tsx src/cli/service.ts",
-    "service:register:test": "tsx src/cli/service.ts --test"
+    "service:register:test": "tsx src/cli/service.ts --test",
+    "keys:generate": "tsx src/cli/keys.ts generate"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
+    "@noble/ciphers": "^1.3.0",
+    "@noble/curves": "^1.9.0",
     "@supabase/supabase-js": "^2.39.0",
+    "chalk": "^5.3.0",
     "dotenv": "^16.5.0",
     "fp-ts": "^2.16.1",
     "io-ts": "^2.2.20",
