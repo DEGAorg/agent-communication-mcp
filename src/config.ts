@@ -31,6 +31,7 @@ export const config = {
 
   // Logging configuration
   logLevel: process.env.LOG_LEVEL || 'info',
+  logFile: process.env.LOG_FILE || undefined,
 } as const;
 
 // Validate required environment variables
