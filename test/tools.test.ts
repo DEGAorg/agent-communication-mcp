@@ -7,6 +7,12 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { StateManager } from '../src/state/manager.js';
 import { validateService } from '../src/validation/service.js';
 import { Service } from '../src/supabase/config.js';
+import { SERVICE_PRIVACY_LEVELS } from '../src/supabase/message-types.js';
+import { ServiceContentStorage, ServiceContent } from '../src/storage/service-content.js';
+import { MESSAGE_TOPICS, MESSAGE_PURPOSE, CONTENT_TYPES } from '../src/supabase/message-types.js';
+import { TRANSACTION_TYPES, MESSAGE_STATUS } from '../src/supabase/message-types.js';
+import { x25519 } from '@noble/curves/ed25519';
+import { randomBytes } from '@noble/hashes/utils';
 
 // Mock the validation module
 jest.mock('../src/validation/service.js', () => ({
@@ -19,22 +25,50 @@ describe('ToolHandler', () => {
   let mockEncryptionService: EncryptionService;
   let mockAuthService: AuthService;
   let mockStateManager: StateManager;
+  let testPrivateKey: Uint8Array;
+  let testPublicKey: Uint8Array;
 
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
+
+    // Generate test X25519 key pair
+    testPrivateKey = randomBytes(32);
+    testPublicKey = x25519.getPublicKey(testPrivateKey);
+
+    // Mock environment variables for encryption
+    process.env.AGENT_PRIVATE_KEY = Buffer.from(testPrivateKey).toString('base64');
+    process.env.AGENT_PUBLIC_KEY = Buffer.from(testPublicKey).toString('base64');
 
     // Initialize services
     mockSupabaseService = {
       listServices: jest.fn(),
       registerService: jest.fn(),
       getServiceById: jest.fn(),
-      cleanup: jest.fn()
+      cleanup: jest.fn(),
+      sendMessage: jest.fn()
     } as unknown as SupabaseService;
 
     mockEncryptionService = {
-      encrypt: jest.fn(),
-      decrypt: jest.fn()
+      encryptMessageForRecipients: jest.fn().mockImplementation(async (message, recipientPublicKey, auditorPublicKey, senderPrivateKey) => {
+        // For testing purposes, we'll just return a mock encrypted message
+        return {
+          encryptedMessage: {
+            nonce: 'test-nonce',
+            ciphertext: 'test-ciphertext',
+            tag: 'test-tag'
+          },
+          encryptedKeys: {
+            recipient: 'test-recipient-key',
+            auditor: 'test-auditor-key'
+          }
+        };
+      }),
+      decryptMessage: jest.fn().mockImplementation(async (encryptedMessage, encryptedKey, senderPublicKey, recipientPrivateKey) => {
+        // For testing purposes, return a mock decrypted message
+        return JSON.stringify({ amount: '100' });
+      }),
+      getPublicKey: jest.fn().mockReturnValue(Buffer.alloc(32)) // Return a 32-byte buffer as public key
     } as unknown as EncryptionService;
 
     mockAuthService = {
@@ -89,7 +123,24 @@ describe('ToolHandler', () => {
 
     describe('listServices', () => {
       it('should return list of services', async () => {
-        const mockServices = [{ id: '1', name: 'Test Service', agent_id: 'user123', type: 'test', example: 'Test example', price: 100, description: 'Test description' }];
+        const mockServices: Service[] = [{
+          id: '1',
+          name: 'Test Service',
+          agent_id: 'user123',
+          type: 'test',
+          example: 'Test example',
+          price: 100,
+          description: 'Test description',
+          privacy_settings: {
+            contentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+            paymentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+            deliveryPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+            conditions: {
+              text: 'Service terms and conditions...',
+              privacy: SERVICE_PRIVACY_LEVELS.PUBLIC
+            }
+          }
+        }];
         jest.spyOn(mockSupabaseService, 'listServices').mockResolvedValue(mockServices);
 
         const result = await toolHandler.handleToolCall('listServices', {});
@@ -111,10 +162,19 @@ describe('ToolHandler', () => {
         type: 'CUSTOM',
         price: 100,
         description: 'Test description that is at least 10 characters long',
-        example: 'Test example'
+        example: 'Test example',
+        privacy_settings: {
+          contentPrivacy: SERVICE_PRIVACY_LEVELS.MIXED,
+          paymentPrivacy: SERVICE_PRIVACY_LEVELS.PRIVATE,
+          deliveryPrivacy: SERVICE_PRIVACY_LEVELS.MIXED,
+          conditions: {
+            text: 'Service terms and conditions...',
+            privacy: SERVICE_PRIVACY_LEVELS.PRIVATE
+          }
+        }
       };
 
-      it('should register a new service successfully', async () => {
+      it('should register a new service with privacy settings successfully', async () => {
         const mockUserId = 'user123';
         jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
         jest.spyOn(mockSupabaseService, 'registerService').mockResolvedValue({
@@ -126,11 +186,13 @@ describe('ToolHandler', () => {
         const result = await toolHandler.handleToolCall('registerService', validServiceData);
 
         expect(result.content[0].type).toBe('text');
-        expect(JSON.parse(result.content[0].text)).toEqual({
+        const registeredService = JSON.parse(result.content[0].text);
+        expect(registeredService).toEqual({
           id: '1',
           agent_id: mockUserId,
           ...validServiceData
         });
+        expect(registeredService.privacy_settings).toEqual(validServiceData.privacy_settings);
         expect(mockSupabaseService.registerService).toHaveBeenCalledWith({
           agent_id: mockUserId,
           ...validServiceData
@@ -173,7 +235,16 @@ describe('ToolHandler', () => {
         type: 'CUSTOM',
         price: 100,
         description: 'Test description',
-        example: 'Test example'
+        example: 'Test example',
+        privacy_settings: {
+          contentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+          paymentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+          deliveryPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+          conditions: {
+            text: 'Service terms and conditions...',
+            privacy: SERVICE_PRIVACY_LEVELS.PUBLIC
+          }
+        }
       };
 
       it('should store service content successfully', async () => {
@@ -211,6 +282,140 @@ describe('ToolHandler', () => {
     });
 
     describe('servicePayment', () => {
+      const mockService = {
+        id: '1',
+        agent_id: 'different-user',
+        name: 'Test Service',
+        type: 'CUSTOM',
+        price: 100,
+        description: 'Test description',
+        example: 'Test example',
+        privacy_settings: {
+          contentPrivacy: SERVICE_PRIVACY_LEVELS.MIXED,
+          paymentPrivacy: SERVICE_PRIVACY_LEVELS.PRIVATE,
+          deliveryPrivacy: SERVICE_PRIVACY_LEVELS.MIXED,
+          conditions: {
+            text: 'Service terms and conditions...',
+            privacy: SERVICE_PRIVACY_LEVELS.PRIVATE
+          }
+        }
+      };
+
+      it('should handle private payment correctly', async () => {
+        const mockUserId = 'user123';
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue(mockService);
+        jest.spyOn(mockSupabaseService, 'sendMessage').mockResolvedValue({
+          id: '1',
+          sender_agent_id: mockUserId,
+          recipient_agent_id: mockService.agent_id,
+          public: {
+            topic: MESSAGE_TOPICS.PAYMENT,
+            serviceId: mockService.id,
+            content: {
+              type: CONTENT_TYPES.TRANSACTION,
+              data: {
+                type: TRANSACTION_TYPES.PAYMENT_NOTIFICATION,
+                status: MESSAGE_STATUS.PENDING,
+                service_name: mockService.name,
+                timestamp: new Date().toISOString()
+              },
+              metadata: {
+                timestamp: new Date().toISOString(),
+                version: '1.0',
+                extra: {
+                  purpose: MESSAGE_PURPOSE.PAYMENT_NOTIFICATION
+                }
+              }
+            }
+          },
+          private: {
+            encryptedMessage: {
+              nonce: 'test-nonce',
+              ciphertext: 'test-ciphertext',
+              tag: 'test-tag'
+            },
+            encryptedKeys: {
+              recipient: 'test-recipient-key',
+              auditor: 'test-auditor-key'
+            }
+          },
+          created_at: new Date().toISOString(),
+          read: false
+        });
+
+        const result = await toolHandler.handleToolCall('servicePayment', {
+          serviceId: '1',
+          amount: '100'
+        });
+
+        expect(result.content[0].type).toBe('text');
+        const response = JSON.parse(result.content[0].text);
+        expect(response.amount).toBe('[PRIVATE]');
+        expect(response.status).toBe('success');
+      });
+
+      it('should handle public payment correctly', async () => {
+        const mockUserId = 'user123';
+        const publicService = {
+          ...mockService,
+          privacy_settings: {
+            ...mockService.privacy_settings,
+            paymentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC
+          }
+        };
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue(publicService);
+        jest.spyOn(mockSupabaseService, 'sendMessage').mockResolvedValue({
+          id: '1',
+          sender_agent_id: mockUserId,
+          recipient_agent_id: publicService.agent_id,
+          public: {
+            topic: MESSAGE_TOPICS.PAYMENT,
+            serviceId: publicService.id,
+            content: {
+              type: CONTENT_TYPES.TRANSACTION,
+              data: {
+                type: TRANSACTION_TYPES.PAYMENT_NOTIFICATION,
+                status: MESSAGE_STATUS.PENDING,
+                service_name: publicService.name,
+                timestamp: new Date().toISOString()
+              },
+              metadata: {
+                timestamp: new Date().toISOString(),
+                version: '1.0',
+                extra: {
+                  purpose: MESSAGE_PURPOSE.PAYMENT_NOTIFICATION
+                }
+              }
+            }
+          },
+          private: {
+            encryptedMessage: {
+              nonce: 'test-nonce',
+              ciphertext: 'test-ciphertext',
+              tag: 'test-tag'
+            },
+            encryptedKeys: {
+              recipient: 'test-recipient-key',
+              auditor: 'test-auditor-key'
+            }
+          },
+          created_at: new Date().toISOString(),
+          read: false
+        });
+
+        const result = await toolHandler.handleToolCall('servicePayment', {
+          serviceId: '1',
+          amount: '100'
+        });
+
+        expect(result.content[0].type).toBe('text');
+        const response = JSON.parse(result.content[0].text);
+        expect(response.amount).toBe('100');
+        expect(response.status).toBe('success');
+      });
+
       it('should throw error when user is not authenticated', async () => {
         jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(null);
 
@@ -218,55 +423,195 @@ describe('ToolHandler', () => {
           serviceId: '1',
           amount: '100'
         })).rejects.toThrow(new McpError(ErrorCode.InvalidParams, 'No authenticated agent found'));
-      });
-
-      it('should handle service payment when authenticated', async () => {
-        const mockUserId = 'user123';
-        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
-        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue({
-          id: '1',
-          agent_id: 'different-user',
-          name: 'Test Service',
-          type: 'CUSTOM',
-          price: 100,
-          description: 'Test description',
-          example: 'Test example'
-        });
-
-        await expect(toolHandler.handleToolCall('servicePayment', {
-          serviceId: '1',
-          amount: '100'
-        })).rejects.toThrow(new McpError(ErrorCode.InternalError, 'Failed to process service payment: u coordinate of length 32 expected, got 15'));
       });
     });
 
     describe('serviceDelivery', () => {
+      const mockService = {
+        id: '1',
+        agent_id: 'different-user',
+        name: 'Test Service',
+        type: 'CUSTOM',
+        price: 100,
+        description: 'Test description',
+        example: 'Test example',
+        privacy_settings: {
+          contentPrivacy: SERVICE_PRIVACY_LEVELS.MIXED,
+          paymentPrivacy: SERVICE_PRIVACY_LEVELS.PRIVATE,
+          deliveryPrivacy: SERVICE_PRIVACY_LEVELS.MIXED,
+          conditions: {
+            text: 'Service terms and conditions...',
+            privacy: SERVICE_PRIVACY_LEVELS.PRIVATE
+          }
+        }
+      };
+
+      const mockServiceContent: ServiceContent = {
+        service_id: '1',
+        agent_id: 'different-user',
+        content: { test: 'data' },
+        version: '1.0.0',
+        tags: ['test'],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      beforeEach(() => {
+        // Mock ServiceContentStorage
+        const mockServiceContentStorage = {
+          getContent: jest.fn().mockImplementation(async (...args: unknown[]) => mockServiceContent),
+          storeContent: jest.fn().mockImplementation(async (content: any) => ({
+            ...content,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })),
+          listVersions: jest.fn().mockImplementation(async (...args: unknown[]) => ['1.0.0']),
+          deleteContent: jest.fn().mockImplementation(async (...args: unknown[]) => undefined)
+        };
+
+        jest.spyOn(ServiceContentStorage, 'getInstance').mockReturnValue(mockServiceContentStorage as unknown as ServiceContentStorage);
+      });
+
+      it('should handle mixed privacy delivery correctly', async () => {
+        const mockUserId = 'user123';
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue(mockService);
+        jest.spyOn(mockSupabaseService, 'sendMessage').mockResolvedValue({
+          id: '1',
+          sender_agent_id: mockService.agent_id,
+          recipient_agent_id: mockUserId,
+          public: {
+            topic: MESSAGE_TOPICS.DELIVERY,
+            serviceId: mockService.id,
+            content: {
+              type: CONTENT_TYPES.TRANSACTION,
+              data: {
+                type: TRANSACTION_TYPES.SERVICE_DELIVERY,
+                status: MESSAGE_STATUS.COMPLETED,
+                service_name: mockService.name,
+                version: mockServiceContent.version,
+                timestamp: new Date().toISOString()
+              },
+              metadata: {
+                timestamp: new Date().toISOString(),
+                version: '1.0',
+                extra: {
+                  purpose: MESSAGE_PURPOSE.SERVICE_DELIVERY
+                }
+              }
+            }
+          },
+          private: {
+            encryptedMessage: {
+              nonce: 'test-nonce',
+              ciphertext: 'test-ciphertext',
+              tag: 'test-tag'
+            },
+            encryptedKeys: {
+              recipient: 'test-recipient-key',
+              auditor: 'test-auditor-key'
+            }
+          },
+          created_at: new Date().toISOString(),
+          read: false
+        });
+
+        const result = await toolHandler.handleToolCall('serviceDelivery', {
+          serviceId: '1',
+          data: {},
+          privacyPreferences: {
+            contentPrivacy: SERVICE_PRIVACY_LEVELS.MIXED,
+            paymentPrivacy: SERVICE_PRIVACY_LEVELS.PRIVATE,
+            deliveryPrivacy: SERVICE_PRIVACY_LEVELS.MIXED
+          }
+        });
+
+        expect(result.content[0].type).toBe('text');
+        const response = JSON.parse(result.content[0].text);
+        expect(response.status).toBe('success');
+        expect(response.privacy).toBe(SERVICE_PRIVACY_LEVELS.MIXED);
+      });
+
+      it('should handle private delivery correctly', async () => {
+        const mockUserId = 'user123';
+        const privateService = {
+          ...mockService,
+          privacy_settings: {
+            ...mockService.privacy_settings,
+            deliveryPrivacy: SERVICE_PRIVACY_LEVELS.PRIVATE
+          }
+        };
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue(privateService);
+        jest.spyOn(mockSupabaseService, 'sendMessage').mockImplementation(async (message) => ({
+          ...message,
+          id: '1',
+          created_at: new Date().toISOString(),
+          read: false
+        }));
+
+        const result = await toolHandler.handleToolCall('serviceDelivery', {
+          serviceId: '1',
+          data: {},
+          privacyPreferences: {
+            contentPrivacy: SERVICE_PRIVACY_LEVELS.PRIVATE,
+            paymentPrivacy: SERVICE_PRIVACY_LEVELS.PRIVATE,
+            deliveryPrivacy: SERVICE_PRIVACY_LEVELS.PRIVATE
+          }
+        });
+
+        expect(result.content[0].type).toBe('text');
+        const response = JSON.parse(result.content[0].text);
+        expect(response.status).toBe('success');
+        expect(response.privacy).toBe(SERVICE_PRIVACY_LEVELS.PRIVATE);
+      });
+
+      it('should handle public delivery correctly', async () => {
+        const mockUserId = 'user123';
+        const publicService = {
+          ...mockService,
+          privacy_settings: {
+            ...mockService.privacy_settings,
+            deliveryPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC
+          }
+        };
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue(publicService);
+        jest.spyOn(mockSupabaseService, 'sendMessage').mockImplementation(async (message) => ({
+          ...message,
+          id: '1',
+          created_at: new Date().toISOString(),
+          read: false
+        }));
+
+        const result = await toolHandler.handleToolCall('serviceDelivery', {
+          serviceId: '1',
+          data: {},
+          privacyPreferences: {
+            contentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+            paymentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+            deliveryPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC
+          }
+        });
+
+        expect(result.content[0].type).toBe('text');
+        const response = JSON.parse(result.content[0].text);
+        expect(response.status).toBe('success');
+        expect(response.privacy).toBe(SERVICE_PRIVACY_LEVELS.PUBLIC);
+      });
+
       it('should throw error when user is not authenticated', async () => {
         jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(null);
 
         await expect(toolHandler.handleToolCall('serviceDelivery', {
           serviceId: '1',
-          data: {}
+          data: {},
+          privacyPreferences: {
+            contentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+            paymentPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC,
+            deliveryPrivacy: SERVICE_PRIVACY_LEVELS.PUBLIC
+          }
         })).rejects.toThrow(new McpError(ErrorCode.InvalidParams, 'No authenticated agent found'));
-      });
-
-      it('should handle service delivery when authenticated', async () => {
-        const mockUserId = 'user123';
-        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
-        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue({
-          id: '1',
-          agent_id: 'different-user',
-          name: 'Test Service',
-          type: 'CUSTOM',
-          price: 100,
-          description: 'Test description',
-          example: 'Test example'
-        });
-
-        await expect(toolHandler.handleToolCall('serviceDelivery', {
-          serviceId: '1',
-          data: {}
-        })).rejects.toThrow(new McpError(ErrorCode.InternalError, 'Failed to deliver service content: u coordinate of length 32 expected, got 15'));
       });
     });
 

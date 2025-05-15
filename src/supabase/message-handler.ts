@@ -1,15 +1,17 @@
-import { Message } from './message-types.js';
+import { Message, MESSAGE_TOPICS, CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS } from './message-types.js';
 import { logger } from '../logger.js';
 import { ServiceContentStorage } from '../storage/service-content.js';
 import { StateManager } from '../state/manager.js';
 import { EncryptionService } from '../encryption/service.js';
 import { AuthService } from './auth.js';
+import { SupabaseService } from './service.js';
 
 export class MessageHandler {
   private static instance: MessageHandler;
   private stateManager: StateManager | null = null;
   private encryptionService: EncryptionService | null = null;
   private authService: AuthService | null = null;
+  private supabaseService: SupabaseService | null = null;
 
   private constructor() {}
 
@@ -32,9 +34,13 @@ export class MessageHandler {
     this.authService = authService;
   }
 
+  setSupabaseService(supabaseService: SupabaseService) {
+    this.supabaseService = supabaseService;
+  }
+
   async handleMessage(message: Message): Promise<void> {
     try {
-      if (!this.stateManager || !this.encryptionService || !this.authService) {
+      if (!this.stateManager || !this.encryptionService || !this.authService || !this.supabaseService) {
         throw new Error('Required services not initialized');
       }
 
@@ -61,10 +67,10 @@ export class MessageHandler {
       }
 
       switch (topic) {
-        case 'delivery':
+        case MESSAGE_TOPICS.DELIVERY:
           await this.handleDeliveryMessage(message, decryptedPrivateContent);
           break;
-        case 'payment':
+        case MESSAGE_TOPICS.PAYMENT:
           await this.handlePaymentMessage(message, decryptedPrivateContent);
           break;
         default:
@@ -80,23 +86,39 @@ export class MessageHandler {
     const { public: publicContent } = message;
     const { content } = publicContent;
 
-    if (content.type === 'transaction' && content.data.type === 'service_delivery') {
+    if (content.type === CONTENT_TYPES.TRANSACTION && content.data.type === TRANSACTION_TYPES.SERVICE_DELIVERY) {
       const { serviceId } = publicContent;
-      const { content: serviceContent, version } = content.data;
+      const { version } = content.data;
 
       if (!serviceId) {
         throw new Error('Service ID missing from delivery message');
       }
+
+      // Get service details to check privacy settings
+      const service = await this.supabaseService!.getServiceById(serviceId);
+      if (!service) {
+        throw new Error(`Service ${serviceId} not found`);
+      }
+
+      // Combine public and private content based on privacy settings
+      const combinedContent = {
+        ...content.data,
+        // Include private content if it exists and privacy settings allow
+        ...(privateContent.content && service.privacy_settings.deliveryPrivacy !== 'public' ? {
+          content: privateContent.content
+        } : {}),
+        // Include conditions if they exist and privacy settings allow
+        ...(privateContent.conditions && service.privacy_settings.conditions.privacy !== 'public' ? {
+          conditions: privateContent.conditions
+        } : {})
+      };
 
       // Store the delivered content
       const serviceContentStorage = ServiceContentStorage.getInstance();
       await serviceContentStorage.storeContent({
         service_id: serviceId,
         agent_id: message.recipient_agent_id,
-        content: {
-          ...serviceContent,
-          private: privateContent // Include decrypted private content
-        },
+        content: combinedContent,
         version,
         tags: ['delivered']
       });
@@ -106,7 +128,38 @@ export class MessageHandler {
   }
 
   private async handlePaymentMessage(message: Message, privateContent: Record<string, any>): Promise<void> {
-    // TODO: Implement payment message handling with private content
-    logger.info('Payment message received:', { message, privateContent });
+    const { public: publicContent } = message;
+    const { content } = publicContent;
+
+    if (content.type === CONTENT_TYPES.TRANSACTION && content.data.type === TRANSACTION_TYPES.PAYMENT_NOTIFICATION) {
+      const { serviceId } = publicContent;
+      
+      if (!serviceId) {
+        throw new Error('Service ID missing from payment message');
+      }
+
+      // Get service details to check privacy settings
+      const service = await this.supabaseService!.getServiceById(serviceId);
+      if (!service) {
+        throw new Error(`Service ${serviceId} not found`);
+      }
+
+      // Combine public and private content based on privacy settings
+      const combinedContent = {
+        ...content.data,
+        // Include private payment details if they exist and privacy settings allow
+        ...(privateContent.amount && service.privacy_settings.paymentPrivacy !== 'public' ? {
+          amount: privateContent.amount
+        } : {})
+      };
+
+      // Store payment details
+      logger.info('Payment message processed:', {
+        serviceId,
+        content: combinedContent
+      });
+
+      // TODO: Implement payment processing logic
+    }
   }
 } 

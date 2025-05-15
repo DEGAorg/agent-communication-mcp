@@ -32,11 +32,18 @@ export const MESSAGE_PURPOSE = {
   SERVICE_REQUEST: 'service_request'
 } as const;
 
+export const SERVICE_PRIVACY_LEVELS = {
+  PUBLIC: 'public',
+  PRIVATE: 'private',
+  MIXED: 'mixed'
+} as const;
+
 export type MessageTopic = typeof MESSAGE_TOPICS[keyof typeof MESSAGE_TOPICS];
 export type ContentType = typeof CONTENT_TYPES[keyof typeof CONTENT_TYPES];
 export type TransactionType = typeof TRANSACTION_TYPES[keyof typeof TRANSACTION_TYPES];
 export type MessageStatus = typeof MESSAGE_STATUS[keyof typeof MESSAGE_STATUS];
 export type MessagePurpose = typeof MESSAGE_PURPOSE[keyof typeof MESSAGE_PURPOSE];
+export type ServicePrivacyLevel = typeof SERVICE_PRIVACY_LEVELS[keyof typeof SERVICE_PRIVACY_LEVELS];
 
 // Message type definitions
 export interface MessageMetadata {
@@ -77,6 +84,22 @@ export interface Message {
   recipient_agent_id: string;
   public: MessagePublic;
   private: EncryptedMessage;
+}
+
+export interface ServicePrivacySettings {
+  contentPrivacy: ServicePrivacyLevel;
+  paymentPrivacy: ServicePrivacyLevel;
+  deliveryPrivacy: ServicePrivacyLevel;
+  conditions: {
+    text: string;
+    privacy: ServicePrivacyLevel;
+  };
+}
+
+export interface ClientPrivacyPreferences {
+  contentPrivacy: ServicePrivacyLevel;
+  paymentPrivacy: ServicePrivacyLevel;
+  deliveryPrivacy: ServicePrivacyLevel;
 }
 
 // Type guard functions

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config.js';
-import { Message as MessageType, MessagePublic, EncryptedMessage } from './message-types.js';
+import { Message as MessageType, MessagePublic, EncryptedMessage, ServicePrivacySettings } from './message-types.js';
 import { logger } from '../logger.js';
 
 // Database types
@@ -16,9 +16,10 @@ export interface Service {
   agent_id: string;
   name: string;
   type: string;
-  example: string;
+  example?: string;
   price: number;
   description: string;
+  privacy_settings: ServicePrivacySettings;
 }
 
 export interface Message {

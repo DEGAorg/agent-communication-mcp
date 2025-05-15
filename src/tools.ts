@@ -8,7 +8,8 @@ import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
 import { createPaymentNotificationMessage, createMessageContent, createMessagePublic, createMessage } from './supabase/message-helper.js';
 import { ServiceContentStorage } from './storage/service-content.js';
-import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS } from './supabase/message-types.js';
+import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS } from './supabase/message-types.js';
+import { createServiceDeliveryMessage } from './supabase/message-helper.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -31,9 +32,26 @@ export const ALL_TOOLS = [
         type: { type: 'string' },
         example: { type: 'string' },
         price: { type: 'number' },
-        description: { type: 'string' }
+        description: { type: 'string' },
+        privacy_settings: {
+          type: 'object',
+          properties: {
+            contentPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
+            paymentPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
+            deliveryPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
+            conditions: {
+              type: 'object',
+              properties: {
+                text: { type: 'string' },
+                privacy: { type: 'string', enum: ['public', 'private', 'mixed'] }
+              },
+              required: ['text', 'privacy']
+            }
+          },
+          required: ['contentPrivacy', 'paymentPrivacy', 'deliveryPrivacy', 'conditions']
+        }
       },
-      required: ['name', 'type', 'price', 'description']
+      required: ['name', 'type', 'price', 'description', 'privacy_settings']
     }
   },
   {
@@ -72,9 +90,16 @@ export const ALL_TOOLS = [
       type: 'object',
       properties: {
         serviceId: { type: 'string' },
-        data: { type: 'object' }
+        data: { type: 'object' },
+        privacyPreferences: {
+          type: 'object',
+          properties: {
+            deliveryPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] }
+          },
+          required: ['deliveryPrivacy']
+        }
       },
-      required: ['serviceId', 'data']
+      required: ['serviceId', 'data', 'privacyPreferences']
     }
   },
   {
@@ -318,10 +343,14 @@ export class ToolHandler {
         service.agent_id,
         serviceId,
         amount,
-        service.name
+        service.name,
+        service.privacy_settings
       );
 
       await this.supabaseService.sendMessage(message);
+
+      // Check if payment is private based on service privacy settings
+      const isPrivatePayment = service.privacy_settings?.paymentPrivacy === SERVICE_PRIVACY_LEVELS.PRIVATE;
 
       return {
         content: [
@@ -331,7 +360,7 @@ export class ToolHandler {
               status: 'success',
               message: 'Payment notification sent successfully',
               serviceId,
-              amount
+              amount: isPrivatePayment ? '[PRIVATE]' : amount
             }, null, 2),
             mimeType: 'application/json'
           }
@@ -349,8 +378,8 @@ export class ToolHandler {
     }
   }
 
-  private async handleServiceDelivery(args: { serviceId: string; data: any }) {
-    const { serviceId, data } = args;
+  private async handleServiceDelivery(args: { serviceId: string; data: any; privacyPreferences?: ClientPrivacyPreferences }) {
+    const { serviceId, data, privacyPreferences } = args;
     if (!serviceId || !data) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -388,32 +417,15 @@ export class ToolHandler {
         );
       }
 
-      // Create the delivery message content
-      const content = createMessageContent(
-        CONTENT_TYPES.TRANSACTION,
-        {
-          type: TRANSACTION_TYPES.SERVICE_DELIVERY,
-          status: MESSAGE_STATUS.COMPLETED,
-          service_name: service.name,
-          content: serviceContent.content,
-          version: serviceContent.version,
-          timestamp: new Date().toISOString()
-        },
-        MESSAGE_PURPOSE.SERVICE_DELIVERY
-      );
-
-      // Create the public message content
-      const publicContent = createMessagePublic(
-        MESSAGE_TOPICS.DELIVERY,
-        content,
-        serviceId
-      );
-
-      // Create and send the message
-      const message = await createMessage(
+      // Create and send the delivery message
+      const message = await createServiceDeliveryMessage(
         service.agent_id, // sender is the service provider
         agentId, // recipient is the current agent
-        publicContent
+        serviceId,
+        serviceContent.content,
+        serviceContent.version,
+        service.name,
+        service.privacy_settings
       );
 
       await this.supabaseService.sendMessage(message);
@@ -426,7 +438,8 @@ export class ToolHandler {
               status: 'success',
               message: 'Service content delivered successfully',
               serviceId,
-              version: serviceContent.version
+              version: serviceContent.version,
+              privacy: service.privacy_settings.deliveryPrivacy
             }, null, 2),
             mimeType: 'application/json'
           }
