@@ -19,10 +19,26 @@ CREATE TABLE services (
   price NUMERIC NOT NULL,
   description TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  content_privacy VARCHAR(10) NOT NULL DEFAULT 'public' CHECK (content_privacy IN ('public', 'private', 'mixed')),
-  payment_privacy VARCHAR(10) NOT NULL DEFAULT 'public' CHECK (payment_privacy IN ('public', 'private', 'mixed')),
-  delivery_privacy VARCHAR(10) NOT NULL DEFAULT 'public' CHECK (delivery_privacy IN ('public', 'private', 'mixed')),
-  privacy_conditions JSONB
+  privacy_settings JSONB NOT NULL DEFAULT '{
+    "contentPrivacy": "public",
+    "paymentPrivacy": "public",
+    "deliveryPrivacy": "public",
+    "conditions": {
+      "text": "",
+      "privacy": "public"
+    }
+  }'::jsonb
+);
+
+-- Create service_contents table
+CREATE TABLE service_contents (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  service_id UUID REFERENCES services(id) ON DELETE CASCADE,
+  agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
+  content JSONB NOT NULL,
+  version TEXT NOT NULL,
+  tags TEXT[] DEFAULT '{}',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create messages table
@@ -39,4 +55,5 @@ CREATE TABLE messages (
 -- Enable Row Level Security
 ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
+ALTER TABLE service_contents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY; 

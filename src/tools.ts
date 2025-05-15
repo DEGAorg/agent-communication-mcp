@@ -78,9 +78,10 @@ export const ALL_TOOLS = [
       type: 'object',
       properties: {
         serviceId: { type: 'string' },
-        amount: { type: 'string' }
+        amount: { type: 'string' },
+        transactionId: { type: 'string', description: 'The Midnight blockchain transaction identifier' }
       },
-      required: ['serviceId', 'amount']
+      required: ['serviceId', 'amount', 'transactionId']
     }
   },
   {
@@ -164,7 +165,7 @@ export class ToolHandler {
           );
       }
     } catch (error) {
-      logger.error(`Error handling tool call for ${toolName}:`, error);
+      logger.error({ err: error }, `Error handling tool call for ${toolName}`);
       
       // If it's a system not ready error, provide more specific error code
       if (error instanceof Error && error.message.includes('System not ready')) {
@@ -229,7 +230,7 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error('Error registering service:', error);
+      logger.error({ err: error }, 'Error registering service');
       if (error instanceof McpError) {
         throw error;
       }
@@ -309,12 +310,12 @@ export class ToolHandler {
     }
   }
 
-  private async handleServicePayment(args: { serviceId: string; amount: string }) {
-    const { serviceId, amount } = args;
-    if (!serviceId || !amount) {
+  private async handleServicePayment(args: { serviceId: string; amount: string; transactionId: string }) {
+    const { serviceId, amount, transactionId } = args;
+    if (!serviceId || !amount || !transactionId) {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'Missing required parameters: serviceId and amount'
+        'Missing required parameters: serviceId, amount, and transactionId'
       );
     }
 
@@ -344,6 +345,7 @@ export class ToolHandler {
         serviceId,
         amount,
         service.name,
+        transactionId,
         service.privacy_settings
       );
 
@@ -360,7 +362,8 @@ export class ToolHandler {
               status: 'success',
               message: 'Payment notification sent successfully',
               serviceId,
-              amount: isPrivatePayment ? '[PRIVATE]' : amount
+              amount: isPrivatePayment ? '[PRIVATE]' : amount,
+              transactionId
             }, null, 2),
             mimeType: 'application/json'
           }

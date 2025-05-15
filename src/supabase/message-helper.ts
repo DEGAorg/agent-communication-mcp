@@ -82,6 +82,7 @@ export async function createPaymentNotificationMessage(
   serviceId: string,
   amount: string,
   serviceName: string,
+  transactionId: string,
   privacySettings?: ServicePrivacySettings
 ): Promise<Message> {
   // Create base content
@@ -90,7 +91,8 @@ export async function createPaymentNotificationMessage(
     amount,
     status: MESSAGE_STATUS.PENDING,
     service_name: serviceName,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    transaction_id: transactionId
   };
 
   // Determine what goes in public vs private based on privacy settings
@@ -99,7 +101,8 @@ export async function createPaymentNotificationMessage(
     // Always public
     status: baseContent.status,
     service_name: baseContent.service_name,
-    timestamp: baseContent.timestamp
+    timestamp: baseContent.timestamp,
+    transaction_id: baseContent.transaction_id
   };
 
   const privateData = {

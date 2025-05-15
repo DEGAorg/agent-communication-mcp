@@ -33,4 +33,9 @@ const transport = config.logFile
 export const logger = pino({
   level: config.logLevel,
   transport,
+  serializers: {
+    err: (err) => {
+      return typeof err === 'object' ? JSON.stringify(err, null, 2) : String(err);
+    }
+  }
 }); 
