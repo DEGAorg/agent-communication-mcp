@@ -5,6 +5,7 @@ import { StateManager } from '../state/manager.js';
 import { EncryptionService } from '../encryption/service.js';
 import { AuthService } from './auth.js';
 import { SupabaseService } from './service.js';
+import { createServiceDeliveryMessage } from './message-helper.js';
 
 export class MessageHandler {
   private static instance: MessageHandler;
@@ -159,7 +160,27 @@ export class MessageHandler {
         content: combinedContent
       });
 
-      // TODO: Implement payment processing logic
+      // Get the stored service content
+      const serviceContentStorage = ServiceContentStorage.getInstance();
+      const serviceContent = await serviceContentStorage.getContent(serviceId);
+      
+      if (!serviceContent) {
+        throw new Error(`No content found for service ${serviceId}`);
+      }
+
+      // Create and send the delivery message
+      const deliveryMessage = await createServiceDeliveryMessage(
+        service.agent_id, // sender is the service provider
+        message.sender_agent_id, // recipient is the payment sender
+        serviceId,
+        serviceContent.content,
+        serviceContent.version,
+        service.name,
+        service.privacy_settings
+      );
+
+      await this.supabaseService!.sendMessage(deliveryMessage);
+      logger.info(`Service delivery triggered automatically after payment for service ${serviceId}`);
     }
   }
 } 

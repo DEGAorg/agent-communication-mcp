@@ -136,8 +136,16 @@ export async function createServiceDeliveryMessage(
   serviceName: string,
   privacySettings: ServicePrivacySettings
 ): Promise<Message> {
-  // Create base content
-  const baseContent = {
+  // Create base content that is always public
+  const publicData: {
+    type: typeof TRANSACTION_TYPES.SERVICE_DELIVERY;
+    status: typeof MESSAGE_STATUS.COMPLETED;
+    service_name: string;
+    version: string;
+    timestamp: string;
+    content?: any;
+    conditions?: string;
+  } = {
     type: TRANSACTION_TYPES.SERVICE_DELIVERY,
     status: MESSAGE_STATUS.COMPLETED,
     service_name: serviceName,
@@ -145,28 +153,41 @@ export async function createServiceDeliveryMessage(
     timestamp: new Date().toISOString()
   };
 
-  // Determine what goes in public vs private based on privacy settings
-  const publicData = {
-    ...baseContent,
-    // Always public
-    status: baseContent.status,
-    service_name: baseContent.service_name,
-    version: baseContent.version,
-    timestamp: baseContent.timestamp
-  };
+  // Create private data based on privacy settings
+  const privateData: Record<string, any> = {};
+  
+  // Add service content to private data if privacy settings require it
+  if (privacySettings.deliveryPrivacy === 'private') {
+    privateData.content = serviceContent;
+  } else if (privacySettings.deliveryPrivacy === 'mixed') {
+    // For mixed privacy, we could implement a more sophisticated content filtering
+    // For now, we'll treat it as private
+    privateData.content = serviceContent;
+  } else {
+    // For public privacy, add content to public data
+    publicData.content = serviceContent;
+  }
 
-  const privateData = {
-    // Private data based on privacy settings
-    content: privacySettings.deliveryPrivacy === 'private' ? serviceContent : undefined,
-    conditions: privacySettings.conditions.privacy === 'private' ? privacySettings.conditions.text : undefined
-  };
+  // Add conditions to private data if privacy settings require it
+  if (privacySettings.conditions.privacy === 'private') {
+    privateData.conditions = privacySettings.conditions.text;
+  } else if (privacySettings.conditions.privacy === 'mixed') {
+    // For mixed privacy, we could implement a more sophisticated content filtering
+    // For now, we'll treat it as private
+    privateData.conditions = privacySettings.conditions.text;
+  } else {
+    // For public privacy, add conditions to public data
+    publicData.conditions = privacySettings.conditions.text;
+  }
 
+  // Create the message content
   const content = createMessageContent(
     CONTENT_TYPES.TRANSACTION,
     publicData,
     MESSAGE_PURPOSE.SERVICE_DELIVERY
   );
 
+  // Create the public content
   const publicContent = createMessagePublic(
     MESSAGE_TOPICS.DELIVERY,
     content,
@@ -174,7 +195,7 @@ export async function createServiceDeliveryMessage(
   );
 
   // Only include private content if there's something to encrypt
-  const privateContent = Object.values(privateData).some(v => v !== undefined) ? privateData : {};
+  const privateContent = Object.keys(privateData).length > 0 ? privateData : {};
 
   return await createMessage(senderId, recipientId, publicContent, privateContent);
 } 
