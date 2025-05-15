@@ -18,7 +18,11 @@ CREATE TABLE services (
   example TEXT,
   price NUMERIC NOT NULL,
   description TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  content_privacy VARCHAR(10) NOT NULL DEFAULT 'public' CHECK (content_privacy IN ('public', 'private', 'mixed')),
+  payment_privacy VARCHAR(10) NOT NULL DEFAULT 'public' CHECK (payment_privacy IN ('public', 'private', 'mixed')),
+  delivery_privacy VARCHAR(10) NOT NULL DEFAULT 'public' CHECK (delivery_privacy IN ('public', 'private', 'mixed')),
+  privacy_conditions JSONB
 );
 
 -- Create messages table
