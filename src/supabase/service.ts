@@ -258,9 +258,43 @@ export class SupabaseService {
   }
 
   // Cleanup
-  async cleanup() {
-    if (this.messageChannel) {
-      await this.messageChannel.unsubscribe();
+  async cleanup(): Promise<void> {
+    try {
+      logger.info('Cleaning up Supabase service...');
+      
+      // Clean up realtime subscriptions
+      if (this.messageChannel) {
+        try {
+          logger.info('Unsubscribing from realtime channel...');
+          await this.messageChannel.unsubscribe();
+          this.messageChannel = null;
+          logger.info('Successfully unsubscribed from realtime channel');
+        } catch (error) {
+          logger.error('Error unsubscribing from realtime channel:', {
+            error: error instanceof Error ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack
+            } : error
+          });
+          // Don't throw here, try to continue with other cleanup
+        }
+      }
+
+      // Clear service references
+      this.messageHandler = null;
+      this.authService = null;
+
+      logger.info('Supabase service cleanup completed');
+    } catch (error) {
+      logger.error('Error during Supabase service cleanup:', {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
+      throw error;
     }
   }
 } 
