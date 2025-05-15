@@ -7,15 +7,11 @@ import { AuthService } from './auth.js';
 
 export class MessageHandler {
   private static instance: MessageHandler;
-  private stateManager: StateManager;
-  private encryptionService: EncryptionService;
-  private authService: AuthService;
+  private stateManager: StateManager | null = null;
+  private encryptionService: EncryptionService | null = null;
+  private authService: AuthService | null = null;
 
-  private constructor() {
-    this.stateManager = StateManager.getInstance();
-    this.encryptionService = new EncryptionService();
-    this.authService = AuthService.getInstance();
-  }
+  private constructor() {}
 
   static getInstance(): MessageHandler {
     if (!MessageHandler.instance) {
@@ -24,8 +20,24 @@ export class MessageHandler {
     return MessageHandler.instance;
   }
 
+  setStateManager(stateManager: StateManager) {
+    this.stateManager = stateManager;
+  }
+
+  setEncryptionService(encryptionService: EncryptionService) {
+    this.encryptionService = encryptionService;
+  }
+
+  setAuthService(authService: AuthService) {
+    this.authService = authService;
+  }
+
   async handleMessage(message: Message): Promise<void> {
     try {
+      if (!this.stateManager || !this.encryptionService || !this.authService) {
+        throw new Error('Required services not initialized');
+      }
+
       // Ensure system is ready before handling any messages
       await this.stateManager.ensureReadyWithRecovery();
 

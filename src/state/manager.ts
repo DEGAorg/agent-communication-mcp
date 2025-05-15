@@ -2,6 +2,7 @@ import { logger } from '../logger.js';
 import { AuthService } from '../supabase/auth.js';
 import { SupabaseService } from '../supabase/service.js';
 import { EncryptionService } from '../encryption/service.js';
+import { MessageHandler } from '../supabase/message-handler.js';
 
 export enum SystemState {
   UNINITIALIZED = 'UNINITIALIZED',
@@ -19,21 +20,44 @@ export class StateManager {
   private static instance: StateManager;
   private currentState: SystemState = SystemState.UNINITIALIZED;
   private error: Error | null = null;
-  private authService: AuthService;
-  private supabaseService: SupabaseService;
-  private encryptionService: EncryptionService;
+  private authService: AuthService | null = null;
+  private supabaseService: SupabaseService | null = null;
+  private encryptionService: EncryptionService | null = null;
+  private messageHandler: MessageHandler | null = null;
 
-  private constructor() {
-    this.authService = AuthService.getInstance();
-    this.supabaseService = new SupabaseService();
-    this.encryptionService = new EncryptionService();
-  }
+  private constructor() {}
 
   static getInstance(): StateManager {
     if (!StateManager.instance) {
       StateManager.instance = new StateManager();
     }
     return StateManager.instance;
+  }
+
+  /**
+   * Initialize all services and set up dependencies
+   */
+  async initializeServices(): Promise<void> {
+    try {
+      // Create service instances
+      this.authService = AuthService.getInstance();
+      this.supabaseService = SupabaseService.getInstance();
+      this.messageHandler = MessageHandler.getInstance();
+      this.encryptionService = new EncryptionService();
+
+      // Set up dependencies
+      this.authService.setSupabaseService(this.supabaseService);
+      this.supabaseService.setAuthService(this.authService);
+      this.supabaseService.setMessageHandler(this.messageHandler);
+      this.messageHandler.setAuthService(this.authService);
+      this.messageHandler.setStateManager(this);
+      this.messageHandler.setEncryptionService(this.encryptionService);
+
+      logger.info('All services created and dependencies set up');
+    } catch (error) {
+      this.setState(SystemState.ERROR, error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
   }
 
   getState(): SystemState {
@@ -45,15 +69,31 @@ export class StateManager {
   }
 
   getAuthService(): AuthService {
+    if (!this.authService) {
+      throw new Error('AuthService not initialized');
+    }
     return this.authService;
   }
 
   getSupabaseService(): SupabaseService {
+    if (!this.supabaseService) {
+      throw new Error('SupabaseService not initialized');
+    }
     return this.supabaseService;
   }
 
   getEncryptionService(): EncryptionService {
+    if (!this.encryptionService) {
+      throw new Error('EncryptionService not initialized');
+    }
     return this.encryptionService;
+  }
+
+  getMessageHandler(): MessageHandler {
+    if (!this.messageHandler) {
+      throw new Error('MessageHandler not initialized');
+    }
+    return this.messageHandler;
   }
 
   private setState(newState: SystemState, error: Error | null = null) {
@@ -64,13 +104,44 @@ export class StateManager {
 
   async initialize(): Promise<void> {
     try {
+      // First initialize all services and set up dependencies
+      await this.initializeServices();
+
+      if (!this.authService || !this.supabaseService || !this.encryptionService) {
+        throw new Error('Required services not initialized');
+      }
+
       // Start connection process
       this.setState(SystemState.CONNECTING);
-      await this.supabaseService.initialize();
-      this.setState(SystemState.CONNECTED);
+      try {
+        await this.supabaseService.initialize();
+        this.setState(SystemState.CONNECTED);
+      } catch (error) {
+        logger.error('Failed to connect to Supabase:', {
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : error,
+          state: this.currentState
+        });
+        throw error;
+      }
 
       // Initialize auth service first
-      await this.authService.initialize();
+      try {
+        await this.authService.initialize();
+      } catch (error) {
+        logger.error('Failed to initialize auth service:', {
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : error,
+          state: this.currentState
+        });
+        throw error;
+      }
 
       // Start authentication process
       this.setState(SystemState.AUTHENTICATING);
@@ -105,6 +176,21 @@ export class StateManager {
       
       this.setState(SystemState.AUTHENTICATED);
 
+      // Set up realtime subscriptions after authentication
+      try {
+        await this.supabaseService.setupRealtimeSubscriptions();
+      } catch (error) {
+        logger.error('Failed to setup realtime subscriptions:', {
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : error,
+          state: this.currentState
+        });
+        throw error;
+      }
+
       // Check agent registration
       this.setState(SystemState.REGISTERING);
       const agentId = this.authService.getCurrentUserId();
@@ -122,7 +208,22 @@ export class StateManager {
 
       // System is ready
       this.setState(SystemState.READY);
+      logger.info('All services initialized successfully');
     } catch (error) {
+      const errorDetails = error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      } : error;
+      
+      logger.error('Failed to initialize system:', {
+        error: errorDetails,
+        state: this.currentState,
+        hasAuth: !!this.authService,
+        hasSupabase: !!this.supabaseService,
+        hasEncryption: !!this.encryptionService
+      });
+      
       this.setState(SystemState.ERROR, error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
@@ -203,7 +304,9 @@ export class StateManager {
 
   async cleanup(): Promise<void> {
     try {
-      await this.supabaseService.cleanup();
+      if (this.supabaseService) {
+        await this.supabaseService.cleanup();
+      }
       this.setState(SystemState.UNINITIALIZED);
     } catch (error) {
       this.setState(SystemState.ERROR, error instanceof Error ? error : new Error(String(error)));

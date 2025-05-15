@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config.js';
-import { Message as MessageType, MessagePublic } from './message-types.js';
+import { Message as MessageType, MessagePublic, EncryptedMessage } from './message-types.js';
+import { logger } from '../logger.js';
 
 // Database types
 export interface Agent {
@@ -20,14 +21,15 @@ export interface Service {
   description: string;
 }
 
-export interface Message extends MessageType {
+export interface Message {
   id: string;
+  sender_agent_id: string;
+  recipient_agent_id: string;
+  public: MessagePublic;
+  private: EncryptedMessage;
   created_at: string;
   read: boolean;
 }
-
-// Create Supabase client
-export const supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
 
 // Table names
 export const TABLES = {
@@ -35,6 +37,30 @@ export const TABLES = {
   SERVICES: 'services',
   MESSAGES: 'messages',
 } as const;
+
+// Validate Supabase configuration
+if (!config.supabaseUrl) {
+  throw new Error('SUPABASE_URL environment variable is required');
+}
+if (!config.supabaseAnonKey) {
+  throw new Error('SUPABASE_ANON_KEY environment variable is required');
+}
+
+// Log Supabase configuration (without sensitive data)
+logger.info('Initializing Supabase client', {
+  url: config.supabaseUrl,
+  hasAnonKey: !!config.supabaseAnonKey,
+  nodeEnv: config.nodeEnv
+});
+
+// Create Supabase client
+export const supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});
 
 // RLS Policies
 export const POLICIES = {

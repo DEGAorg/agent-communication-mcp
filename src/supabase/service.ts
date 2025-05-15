@@ -5,17 +5,32 @@ import { MessageHandler } from './message-handler.js';
 import { AuthService } from './auth.js';
 
 export class SupabaseService {
+  private static instance: SupabaseService;
   private messageChannel: RealtimeChannel | null = null;
-  private messageHandler: MessageHandler;
-  private authService: AuthService;
+  private messageHandler: MessageHandler | null = null;
+  private authService: AuthService | null = null;
 
-  constructor() {
-    this.messageHandler = MessageHandler.getInstance();
-    this.authService = AuthService.getInstance();
-    this.setupRealtimeSubscriptions();
+  private constructor() {}
+
+  static getInstance(): SupabaseService {
+    if (!SupabaseService.instance) {
+      SupabaseService.instance = new SupabaseService();
+    }
+    return SupabaseService.instance;
+  }
+
+  setAuthService(authService: AuthService) {
+    this.authService = authService;
+  }
+
+  setMessageHandler(messageHandler: MessageHandler) {
+    this.messageHandler = messageHandler;
   }
 
   private getCurrentAgentId(): string {
+    if (!this.authService) {
+      throw new Error('AuthService not initialized');
+    }
     const agentId = this.authService.getCurrentUserId();
     if (!agentId) {
       throw new Error('No authenticated agent found');
@@ -25,44 +40,91 @@ export class SupabaseService {
 
   async initialize(): Promise<void> {
     try {
+      if (!this.authService) {
+        throw new Error('AuthService not initialized');
+      }
+      if (!this.messageHandler) {
+        throw new Error('MessageHandler not initialized');
+      }
+
       // Test connection
+      logger.info('Testing Supabase connection...');
       const { data, error } = await supabase.from('agents').select('count').limit(1);
+      
       if (error) {
+        logger.error('Supabase connection test failed:', {
+          error: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
         throw error;
       }
+
+      logger.info('Supabase connection test successful', {
+        data,
+        hasAuth: !!this.authService
+      });
+
       logger.info('Supabase connection initialized successfully');
     } catch (error) {
-      logger.error('Failed to initialize Supabase connection:', error);
+      logger.error('Failed to initialize Supabase connection:', {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error,
+        state: 'initialization'
+      });
       throw error;
     }
   }
 
-  private setupRealtimeSubscriptions() {
-    const agentId = this.getCurrentAgentId();
-    
-    this.messageChannel = supabase
-      .channel(`messages:${agentId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: TABLES.MESSAGES,
-          filter: `recipient_agent_id=eq.${agentId}`,
-        },
-        async (payload) => {
-          logger.info('Message change received:', payload);
-          try {
-            if (payload.eventType === 'INSERT') {
-              const message = payload.new as Message;
-              await this.messageHandler.handleMessage(message);
+  /**
+   * Set up realtime subscriptions after authentication is complete
+   */
+  async setupRealtimeSubscriptions(): Promise<void> {
+    try {
+      if (!this.messageHandler) {
+        throw new Error('MessageHandler not initialized');
+      }
+      const agentId = this.getCurrentAgentId();
+      
+      this.messageChannel = supabase
+        .channel(`messages:${agentId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: TABLES.MESSAGES,
+            filter: `recipient_agent_id=eq.${agentId}`,
+          },
+          async (payload) => {
+            logger.info('Message change received:', payload);
+            try {
+              if (payload.eventType === 'INSERT') {
+                const message = payload.new as Message;
+                await this.messageHandler!.handleMessage(message);
+              }
+            } catch (error) {
+              logger.error('Error processing message:', error);
             }
-          } catch (error) {
-            logger.error('Error processing message:', error);
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+
+      logger.info('Realtime subscriptions setup completed');
+    } catch (error) {
+      logger.error('Failed to setup realtime subscriptions:', {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
+      throw error;
+    }
   }
 
   // Agent operations

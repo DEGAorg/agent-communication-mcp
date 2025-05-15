@@ -10,7 +10,7 @@ export class AuthService {
   private readonly SESSION_FILE: string;
   private isInitializing: boolean = false;
   private renewalInterval: NodeJS.Timeout | null = null;
-  private supabaseService: SupabaseService;
+  private supabaseService: SupabaseService | null = null;
 
   private constructor() {
     // Set up session file path in project root
@@ -22,9 +22,6 @@ export class AuthService {
     if (!fs.existsSync(sessionDir)) {
       fs.mkdirSync(sessionDir, { mode: 0o700 }); // Secure directory permissions
     }
-
-    // Initialize Supabase service
-    this.supabaseService = new SupabaseService();
   }
 
   static getInstance(): AuthService {
@@ -32,6 +29,10 @@ export class AuthService {
       AuthService.instance = new AuthService();
     }
     return AuthService.instance;
+  }
+
+  setSupabaseService(service: SupabaseService) {
+    this.supabaseService = service;
   }
 
   /**
@@ -253,6 +254,10 @@ export class AuthService {
    */
   public async registerAgent(): Promise<void> {
     try {
+      if (!this.supabaseService) {
+        throw new Error('SupabaseService not initialized');
+      }
+
       const agentName = process.env.AGENT_NAME || 'default_agent';
       const publicKey = process.env.AGENT_PUBLIC_KEY;
       const userId = this.currentSession?.user?.id;

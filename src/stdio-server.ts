@@ -30,11 +30,13 @@ function formatError(error: unknown): string {
 /**
  * Create and configure MCP server
  */
-export function createServer() {
+export async function createServer() {
   logger.info('Creating Agent Communication MCP server');
 
-  // Initialize state manager
+  // Initialize state manager (which handles all service initialization)
   const stateManager = StateManager.getInstance();
+  await stateManager.initialize();
+
   const toolHandler = new ToolHandler(
     stateManager.getSupabaseService(),
     stateManager.getEncryptionService(),
@@ -64,9 +66,6 @@ export function createServer() {
   return {
     start: async () => {
       try {
-        // Initialize system state
-        await stateManager.initialize();
-        
         await server.connect(transport);
         logger.info('Server started successfully');
       } catch (error) {
@@ -188,7 +187,7 @@ function setupExitHandlers(server: any) {
 async function main() {
   try {
     logger.info('Starting Agent Communication MCP server');
-    const server = createServer();
+    const server = await createServer();
 
     // Start server
     await server.start();

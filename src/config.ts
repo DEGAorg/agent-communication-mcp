@@ -16,9 +16,18 @@ try {
   rootDir = process.cwd();
 }
 
+const envPath = path.join(rootDir, '.env');
+console.log('Loading environment variables from:', envPath);
+
 // Load environment variables from .env file if present
 // In production, these will be provided by Docker or the host environment
-dotenv.config({ path: path.join(rootDir, '.env') });
+const result = dotenv.config({ path: envPath });
+
+if (result.error) {
+  console.error('Error loading .env file:', result.error);
+} else {
+  console.log('Environment variables loaded successfully');
+}
 
 export const config = {
   // Supabase configuration
@@ -33,6 +42,15 @@ export const config = {
   logLevel: process.env.LOG_LEVEL || 'info',
   logFile: process.env.LOG_FILE || undefined,
 } as const;
+
+// Log configuration (without sensitive data)
+console.log('Configuration loaded:', {
+  hasSupabaseUrl: !!config.supabaseUrl,
+  hasSupabaseAnonKey: !!config.supabaseAnonKey,
+  port: config.port,
+  nodeEnv: config.nodeEnv,
+  logLevel: config.logLevel
+});
 
 // Validate required environment variables
 const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY'] as const;
