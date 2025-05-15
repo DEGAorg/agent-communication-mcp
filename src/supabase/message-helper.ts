@@ -11,6 +11,7 @@ import {
   ServicePrivacySettings,
 } from './message-types.js';
 import { EncryptionService } from '../encryption/service.js';
+import { SupabaseService } from './service.js';
 
 export function createMessageMetadata(purpose?: MessagePurpose): Message['public']['content']['metadata'] {
   return {
@@ -51,10 +52,17 @@ export async function createMessage(
   privateContent: Record<string, any> = {}
 ): Promise<Message> {
   const encryptionService = new EncryptionService();
+  const supabaseService = SupabaseService.getInstance();
   
   // Get the sender's private key and recipient's public key
   const senderPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-  const recipientPublicKey = Buffer.from(process.env.AGENT_PUBLIC_KEY!, 'base64');
+  
+  // Get recipient's public key from database
+  const recipient = await supabaseService.getAgent(recipientId);
+  if (!recipient) {
+    throw new Error(`Recipient agent ${recipientId} not found`);
+  }
+  const recipientPublicKey = Buffer.from(recipient.public_key, 'base64');
   
   // Encrypt the private content
   const { encryptedMessage, encryptedKeys } = await encryptionService.encryptMessageForRecipients(

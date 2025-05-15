@@ -70,29 +70,45 @@ export class EncryptionService {
 
   // Encrypt a key with X25519
   private encryptKey(key: Uint8Array, recipientPublicKey: Uint8Array, senderPrivateKey: Uint8Array): string {
-    const sharedSecret = x25519.getSharedSecret(senderPrivateKey, recipientPublicKey);
-    const nonce = Buffer.alloc(12, 0); // Use zero-filled nonce for key encryption
-    const cipher = createCipheriv('aes-256-gcm', sharedSecret, nonce);
-    const encrypted = Buffer.concat([
-      cipher.update(key),
-      cipher.final()
-    ]);
-    return Buffer.concat([
-      encrypted,
-      cipher.getAuthTag()
-    ]).toString('base64');
+    try {
+      const sharedSecret = x25519.getSharedSecret(senderPrivateKey, recipientPublicKey);
+      logger.debug('Encrypting key with shared secret length:', sharedSecret.length);
+      
+      const nonce = Buffer.alloc(12, 0);
+      const cipher = createCipheriv('aes-256-gcm', sharedSecret.slice(0, 32), nonce);
+      
+      const encrypted = Buffer.concat([
+        cipher.update(key),
+        cipher.final()
+      ]);
+      
+      const result = Buffer.concat([
+        encrypted,
+        cipher.getAuthTag()
+      ]).toString('base64');
+      
+      logger.debug('Encrypted key length:', result.length);
+      return result;
+    } catch (error) {
+      logger.error('Error encrypting key:', error);
+      throw error;
+    }
   }
 
   // Decrypt a key with X25519
   private decryptKey(encryptedKey: string, senderPublicKey: Uint8Array, recipientPrivateKey: Uint8Array): Uint8Array {
     try {
       const encrypted = Buffer.from(encryptedKey, 'base64');
+      logger.debug('Decrypting key with length:', encrypted.length);
+      
       const tag = encrypted.slice(-16);
       const ciphertext = encrypted.slice(0, -16);
       
       const sharedSecret = x25519.getSharedSecret(recipientPrivateKey, senderPublicKey);
-      const nonce = Buffer.alloc(12, 0); // Use same zero-filled nonce as encryption
-      const decipher = createDecipheriv('aes-256-gcm', sharedSecret, nonce);
+      logger.debug('Decrypting with shared secret length:', sharedSecret.length);
+      
+      const nonce = Buffer.alloc(12, 0);
+      const decipher = createDecipheriv('aes-256-gcm', sharedSecret.slice(0, 32), nonce);
       decipher.setAuthTag(tag);
 
       const decrypted = Buffer.concat([
@@ -100,6 +116,7 @@ export class EncryptionService {
         decipher.final()
       ]);
       
+      logger.debug('Decrypted key length:', decrypted.length);
       return decrypted;
     } catch (error) {
       logger.error('Error decrypting key:', error);
