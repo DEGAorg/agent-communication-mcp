@@ -55,7 +55,13 @@ export class MessageHandler {
       let decryptedPrivateContent: Record<string, any> = {};
       if (privateContent) {
         const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-        const senderPublicKey = Buffer.from(process.env.AGENT_PUBLIC_KEY!, 'base64');
+        
+        // Get sender's public key from database
+        const sender = await this.supabaseService!.getAgent(message.sender_agent_id);
+        if (!sender) {
+          throw new Error(`Sender agent ${message.sender_agent_id} not found`);
+        }
+        const senderPublicKey = Buffer.from(sender.public_key, 'base64');
         
         decryptedPrivateContent = JSON.parse(
           await this.encryptionService.decryptMessage(

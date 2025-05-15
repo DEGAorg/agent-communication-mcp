@@ -49,23 +49,30 @@ export class EncryptionService {
 
   // Decrypt data with AES-256-GCM
   private decryptAES(encrypted: { nonce: string; ciphertext: string; tag: string }, key: Uint8Array): string {
-    const nonce = Buffer.from(encrypted.nonce, 'base64');
-    const ciphertext = Buffer.from(encrypted.ciphertext, 'base64');
-    const tag = Buffer.from(encrypted.tag, 'base64');
-
-    const decipher = createDecipheriv('aes-256-gcm', key, nonce);
-    decipher.setAuthTag(tag);
-
-    return Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final()
-    ]).toString('utf8');
+    try {
+      
+      const nonce = Buffer.from(encrypted.nonce, 'base64');
+      const ciphertext = Buffer.from(encrypted.ciphertext, 'base64');
+      const tag = Buffer.from(encrypted.tag, 'base64');
+  
+      const decipher = createDecipheriv('aes-256-gcm', key, nonce);
+      decipher.setAuthTag(tag);
+  
+      return Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final()
+      ]).toString('utf8');
+    } catch (error) {
+      logger.error('Error decrypting message:', error);
+      throw error;
+    }
   }
 
   // Encrypt a key with X25519
   private encryptKey(key: Uint8Array, recipientPublicKey: Uint8Array, senderPrivateKey: Uint8Array): string {
     const sharedSecret = x25519.getSharedSecret(senderPrivateKey, recipientPublicKey);
-    const cipher = createCipheriv('aes-256-gcm', sharedSecret, Buffer.alloc(12, 0));
+    const nonce = Buffer.alloc(12, 0); // Use zero-filled nonce for key encryption
+    const cipher = createCipheriv('aes-256-gcm', sharedSecret, nonce);
     const encrypted = Buffer.concat([
       cipher.update(key),
       cipher.final()
@@ -78,18 +85,26 @@ export class EncryptionService {
 
   // Decrypt a key with X25519
   private decryptKey(encryptedKey: string, senderPublicKey: Uint8Array, recipientPrivateKey: Uint8Array): Uint8Array {
-    const encrypted = Buffer.from(encryptedKey, 'base64');
-    const tag = encrypted.slice(-16);
-    const ciphertext = encrypted.slice(0, -16);
-    
-    const sharedSecret = x25519.getSharedSecret(recipientPrivateKey, senderPublicKey);
-    const decipher = createDecipheriv('aes-256-gcm', sharedSecret, Buffer.alloc(12, 0));
-    decipher.setAuthTag(tag);
-    
-    return Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final()
-    ]);
+    try {
+      const encrypted = Buffer.from(encryptedKey, 'base64');
+      const tag = encrypted.slice(-16);
+      const ciphertext = encrypted.slice(0, -16);
+      
+      const sharedSecret = x25519.getSharedSecret(recipientPrivateKey, senderPublicKey);
+      const nonce = Buffer.alloc(12, 0); // Use same zero-filled nonce as encryption
+      const decipher = createDecipheriv('aes-256-gcm', sharedSecret, nonce);
+      decipher.setAuthTag(tag);
+
+      const decrypted = Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final()
+      ]);
+      
+      return decrypted;
+    } catch (error) {
+      logger.error('Error decrypting key:', error);
+      throw error;
+    }
   }
 
   // Encrypt message for multiple recipients
@@ -127,10 +142,15 @@ export class EncryptionService {
     senderPublicKey: Uint8Array,
     recipientPrivateKey: Uint8Array
   ): Promise<string> {
-    // First decrypt the AES key
-    const aesKey = this.decryptKey(encryptedKey, senderPublicKey, recipientPrivateKey);
-    
-    // Then decrypt the message
-    return this.decryptAES(encryptedMessage, aesKey);
+    try {
+      // First decrypt the AES key
+      const aesKey = this.decryptKey(encryptedKey, senderPublicKey, recipientPrivateKey);
+      
+      // Then decrypt the message
+      return this.decryptAES(encryptedMessage, aesKey);
+    } catch (error) {
+      logger.error('Error decrypting message:', error);
+      throw error;
+    }
   }
 } 

@@ -186,7 +186,7 @@ export class SupabaseService {
         }
         
         this.messageChannel = supabase
-          .channel(`messages:${agentId}`)
+          .channel(`table_db_changes`)
           .on(
             'postgres_changes',
             {

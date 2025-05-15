@@ -52,6 +52,7 @@ export class StateManager {
       this.messageHandler.setAuthService(this.authService);
       this.messageHandler.setStateManager(this);
       this.messageHandler.setEncryptionService(this.encryptionService);
+      this.messageHandler.setSupabaseService(this.supabaseService);
 
       logger.info('All services created and dependencies set up');
     } catch (error) {
