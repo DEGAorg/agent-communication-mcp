@@ -9,6 +9,11 @@ export class SupabaseService {
   private messageChannel: RealtimeChannel | null = null;
   private messageHandler: MessageHandler | null = null;
   private authService: AuthService | null = null;
+  private healthCheckInterval: NodeJS.Timeout | null = null;
+  private lastHeartbeat: number = 0;
+  private readonly HEARTBEAT_INTERVAL = 30000; // 30 seconds
+  private readonly MAX_MISSED_HEARTBEATS = 2;
+  private isReconnecting: boolean = false;
 
   private constructor() {}
 
@@ -81,6 +86,85 @@ export class SupabaseService {
   }
 
   /**
+   * Start health check monitoring for realtime connection
+   */
+  private startHealthCheck(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+
+    this.lastHeartbeat = Date.now();
+    this.healthCheckInterval = setInterval(async () => {
+      try {
+        const now = Date.now();
+        const timeSinceLastHeartbeat = now - this.lastHeartbeat;
+        
+        if (timeSinceLastHeartbeat > this.HEARTBEAT_INTERVAL * this.MAX_MISSED_HEARTBEATS) {
+          logger.warn('Realtime connection appears to be dead, attempting reconnection...', {
+            timeSinceLastHeartbeat,
+            maxAllowed: this.HEARTBEAT_INTERVAL * this.MAX_MISSED_HEARTBEATS
+          });
+          await this.reconnectRealtime();
+        }
+      } catch (error) {
+        logger.error('Error in health check:', {
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : error
+        });
+      }
+    }, this.HEARTBEAT_INTERVAL);
+  }
+
+  /**
+   * Stop health check monitoring
+   */
+  private stopHealthCheck(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+  }
+
+  /**
+   * Attempt to reconnect the realtime subscription
+   */
+  private async reconnectRealtime(): Promise<void> {
+    if (this.isReconnecting) {
+      logger.info('Reconnection already in progress, skipping...');
+      return;
+    }
+
+    try {
+      this.isReconnecting = true;
+      logger.info('Starting realtime reconnection...');
+
+      // Clean up existing connection
+      if (this.messageChannel) {
+        await this.messageChannel.unsubscribe();
+        this.messageChannel = null;
+      }
+
+      // Attempt to reconnect
+      await this.setupRealtimeSubscriptions();
+      logger.info('Realtime reconnection successful');
+    } catch (error) {
+      logger.error('Failed to reconnect realtime subscription:', {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
+      throw error;
+    } finally {
+      this.isReconnecting = false;
+    }
+  }
+
+  /**
    * Set up realtime subscriptions after authentication is complete
    */
   async setupRealtimeSubscriptions(): Promise<void> {
@@ -126,10 +210,14 @@ export class SupabaseService {
           .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
               logger.info('Successfully subscribed to realtime channel');
+              this.lastHeartbeat = Date.now();
+              this.startHealthCheck();
             } else if (status === 'CLOSED') {
               logger.warn('Realtime channel closed');
+              this.stopHealthCheck();
             } else if (status === 'CHANNEL_ERROR') {
               logger.error('Realtime channel error');
+              this.stopHealthCheck();
             }
           });
 
@@ -261,6 +349,9 @@ export class SupabaseService {
   async cleanup(): Promise<void> {
     try {
       logger.info('Cleaning up Supabase service...');
+      
+      // Stop health check
+      this.stopHealthCheck();
       
       // Clean up realtime subscriptions
       if (this.messageChannel) {
