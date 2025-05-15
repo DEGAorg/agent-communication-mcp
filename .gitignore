@@ -50,3 +50,6 @@ coverage/
 session/auth.json 
 
 *.example
+
+# Local Storage File
+storage/

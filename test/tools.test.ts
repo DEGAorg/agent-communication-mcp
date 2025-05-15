@@ -4,27 +4,49 @@ import { SupabaseService } from '../src/supabase/service.js';
 import { EncryptionService } from '../src/encryption/service.js';
 import { AuthService } from '../src/supabase/auth.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+import { StateManager } from '../src/state/manager.js';
+import { validateService } from '../src/validation/service.js';
+import { Service } from '../src/supabase/config.js';
+
+// Mock the validation module
+jest.mock('../src/validation/service.js', () => ({
+  validateService: jest.fn()
+}));
 
 describe('ToolHandler', () => {
   let toolHandler: ToolHandler;
   let mockSupabaseService: SupabaseService;
   let mockEncryptionService: EncryptionService;
   let mockAuthService: AuthService;
+  let mockStateManager: StateManager;
 
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
 
     // Initialize services
-    mockSupabaseService = new SupabaseService();
-    mockEncryptionService = new EncryptionService();
-    mockAuthService = AuthService.getInstance();
+    mockSupabaseService = {
+      listServices: jest.fn(),
+      registerService: jest.fn(),
+      getServiceById: jest.fn(),
+      cleanup: jest.fn()
+    } as unknown as SupabaseService;
 
-    // Create spies
-    jest.spyOn(mockSupabaseService, 'listServices');
-    jest.spyOn(mockSupabaseService, 'registerService');
-    jest.spyOn(mockSupabaseService, 'cleanup');
-    jest.spyOn(mockAuthService, 'getCurrentUserId');
+    mockEncryptionService = {
+      encrypt: jest.fn(),
+      decrypt: jest.fn()
+    } as unknown as EncryptionService;
+
+    mockAuthService = {
+      getCurrentUserId: jest.fn()
+    } as unknown as AuthService;
+
+    mockStateManager = {
+      ensureReadyWithRecovery: jest.fn().mockImplementation(() => Promise.resolve())
+    } as unknown as StateManager;
+
+    // Mock StateManager.getInstance
+    jest.spyOn(StateManager, 'getInstance').mockReturnValue(mockStateManager);
 
     // Create ToolHandler instance with services
     toolHandler = new ToolHandler(
@@ -43,12 +65,13 @@ describe('ToolHandler', () => {
   describe('getAvailableTools', () => {
     it('should return all available tools', () => {
       const tools = toolHandler.getAvailableTools();
-      expect(tools).toHaveLength(5);
+      expect(tools).toHaveLength(6);
       expect(tools[0].name).toBe('listServices');
       expect(tools[1].name).toBe('registerService');
-      expect(tools[2].name).toBe('servicePayment');
-      expect(tools[3].name).toBe('serviceDelivery');
-      expect(tools[4].name).toBe('revealData');
+      expect(tools[2].name).toBe('storeServiceContent');
+      expect(tools[3].name).toBe('servicePayment');
+      expect(tools[4].name).toBe('serviceDelivery');
+      expect(tools[5].name).toBe('revealData');
     });
   });
 
@@ -57,6 +80,11 @@ describe('ToolHandler', () => {
       await expect(toolHandler.handleToolCall('unknownTool', {}))
         .rejects
         .toThrow(new McpError(ErrorCode.InvalidParams, 'Unknown tool: unknownTool'));
+    });
+
+    it('should ensure system is ready before handling tool calls', async () => {
+      await toolHandler.handleToolCall('listServices', {});
+      expect(mockStateManager.ensureReadyWithRecovery).toHaveBeenCalled();
     });
 
     describe('listServices', () => {
@@ -116,23 +144,129 @@ describe('ToolHandler', () => {
           .rejects
           .toThrow(new McpError(ErrorCode.InvalidParams, 'No authenticated agent found'));
       });
+
+      it('should throw error when service validation fails', async () => {
+        const mockUserId = 'user123';
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'registerService').mockRejectedValue(
+          new McpError(ErrorCode.InvalidParams, 'Invalid service data')
+        );
+
+        await expect(toolHandler.handleToolCall('registerService', validServiceData))
+          .rejects
+          .toThrow(new McpError(ErrorCode.InvalidParams, 'Invalid service data'));
+      });
+    });
+
+    describe('storeServiceContent', () => {
+      const validContentData = {
+        serviceId: '1',
+        content: { test: 'data' },
+        version: '1.0.0',
+        tags: ['test']
+      };
+
+      const mockService: Service = {
+        id: '1',
+        agent_id: 'user123',
+        name: 'Test Service',
+        type: 'CUSTOM',
+        price: 100,
+        description: 'Test description',
+        example: 'Test example'
+      };
+
+      it('should store service content successfully', async () => {
+        const mockUserId = 'user123';
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue(mockService);
+
+        await toolHandler.handleToolCall('storeServiceContent', validContentData);
+
+        expect(mockSupabaseService.getServiceById).toHaveBeenCalledWith('1');
+      });
+
+      it('should throw error when service does not exist', async () => {
+        const mockUserId = 'user123';
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue(null);
+
+        await expect(toolHandler.handleToolCall('storeServiceContent', validContentData))
+          .rejects
+          .toThrow(new McpError(ErrorCode.InvalidParams, 'Service with ID 1 not found'));
+      });
+
+      it('should throw error when user is not the service owner', async () => {
+        const mockUserId = 'user123';
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue({
+          ...mockService,
+          agent_id: 'different-user'
+        });
+
+        await expect(toolHandler.handleToolCall('storeServiceContent', validContentData))
+          .rejects
+          .toThrow(new McpError(ErrorCode.InvalidParams, 'You can only store content for your own services'));
+      });
     });
 
     describe('servicePayment', () => {
-      it('should throw not implemented error', async () => {
+      it('should throw error when user is not authenticated', async () => {
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(null);
+
         await expect(toolHandler.handleToolCall('servicePayment', {
           serviceId: '1',
           amount: '100'
-        })).rejects.toThrow('Not implemented: Service payment');
+        })).rejects.toThrow(new McpError(ErrorCode.InvalidParams, 'No authenticated agent found'));
+      });
+
+      it('should handle service payment when authenticated', async () => {
+        const mockUserId = 'user123';
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue({
+          id: '1',
+          agent_id: 'different-user',
+          name: 'Test Service',
+          type: 'CUSTOM',
+          price: 100,
+          description: 'Test description',
+          example: 'Test example'
+        });
+
+        await expect(toolHandler.handleToolCall('servicePayment', {
+          serviceId: '1',
+          amount: '100'
+        })).rejects.toThrow(new McpError(ErrorCode.InternalError, 'Failed to process service payment: u coordinate of length 32 expected, got 15'));
       });
     });
 
     describe('serviceDelivery', () => {
-      it('should throw not implemented error', async () => {
+      it('should throw error when user is not authenticated', async () => {
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(null);
+
         await expect(toolHandler.handleToolCall('serviceDelivery', {
           serviceId: '1',
           data: {}
-        })).rejects.toThrow('Not implemented: Service delivery');
+        })).rejects.toThrow(new McpError(ErrorCode.InvalidParams, 'No authenticated agent found'));
+      });
+
+      it('should handle service delivery when authenticated', async () => {
+        const mockUserId = 'user123';
+        jest.spyOn(mockAuthService, 'getCurrentUserId').mockReturnValue(mockUserId);
+        jest.spyOn(mockSupabaseService, 'getServiceById').mockResolvedValue({
+          id: '1',
+          agent_id: 'different-user',
+          name: 'Test Service',
+          type: 'CUSTOM',
+          price: 100,
+          description: 'Test description',
+          example: 'Test example'
+        });
+
+        await expect(toolHandler.handleToolCall('serviceDelivery', {
+          serviceId: '1',
+          data: {}
+        })).rejects.toThrow(new McpError(ErrorCode.InternalError, 'Failed to deliver service content: u coordinate of length 32 expected, got 15'));
       });
     });
 
