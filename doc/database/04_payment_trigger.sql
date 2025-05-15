@@ -1,27 +1,30 @@
--- Create a function to handle service delivery
-CREATE OR REPLACE FUNCTION handle_service_delivery()
+-- Create a function to handle payment notifications
+CREATE OR REPLACE FUNCTION handle_payment_notification()
 RETURNS TRIGGER AS $$
 DECLARE
   service_record RECORD;
   message_content JSONB;
 BEGIN
+  -- Only process payment notifications
+  IF NEW.public->>'topic' != 'payment' THEN
+    RETURN NEW;
+  END IF;
+
   -- Get the service details
   SELECT * INTO service_record
   FROM services
-  WHERE id = NEW.service_id;
+  WHERE id = (NEW.public->>'serviceId')::uuid;
 
-  -- Create the message content
+  -- Create the delivery message content
   message_content := jsonb_build_object(
     'topic', 'delivery',
-    'serviceId', NEW.service_id,
+    'serviceId', service_record.id,
     'content', jsonb_build_object(
       'type', 'transaction',
       'data', jsonb_build_object(
         'type', 'service_delivery',
         'status', 'completed',
         'service_name', service_record.name,
-        'content', NEW.content,
-        'version', NEW.version,
         'timestamp', NOW()
       ),
       'metadata', jsonb_build_object(
@@ -34,7 +37,7 @@ BEGIN
     )
   );
 
-  -- Insert the message
+  -- Insert the delivery message
   INSERT INTO messages (
     sender_agent_id,
     recipient_agent_id,
@@ -43,7 +46,7 @@ BEGIN
     read
   ) VALUES (
     service_record.agent_id,
-    NEW.agent_id,
+    NEW.sender_agent_id,
     message_content,
     '{}',
     false
@@ -54,8 +57,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create the trigger
-DROP TRIGGER IF EXISTS service_delivery_trigger ON service_contents;
-CREATE TRIGGER service_delivery_trigger
-  AFTER INSERT ON service_contents
+DROP TRIGGER IF EXISTS payment_notification_trigger ON messages;
+CREATE TRIGGER payment_notification_trigger
+  AFTER INSERT ON messages
   FOR EACH ROW
-  EXECUTE FUNCTION handle_service_delivery(); 
+  EXECUTE FUNCTION handle_payment_notification(); 

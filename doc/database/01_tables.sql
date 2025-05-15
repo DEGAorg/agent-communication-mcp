@@ -30,17 +30,6 @@ CREATE TABLE services (
   }'::jsonb
 );
 
--- Create service_contents table
-CREATE TABLE service_contents (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  service_id UUID REFERENCES services(id) ON DELETE CASCADE,
-  agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
-  content JSONB NOT NULL,
-  version TEXT NOT NULL,
-  tags TEXT[] DEFAULT '{}',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 -- Create messages table
 CREATE TABLE messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -55,5 +44,4 @@ CREATE TABLE messages (
 -- Enable Row Level Security
 ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
-ALTER TABLE service_contents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY; 

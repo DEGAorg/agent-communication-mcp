@@ -16,7 +16,6 @@ DROP POLICY IF EXISTS messages_delete_policy ON messages;
 
 -- Drop tables in reverse order
 DROP TABLE IF EXISTS messages;
-DROP TABLE IF EXISTS service_contents;
 DROP TABLE IF EXISTS services;
 DROP TABLE IF EXISTS agents;
 
