@@ -278,6 +278,20 @@ export class SupabaseService {
     return data;
   }
 
+  async getAgentPublicKey(id: string): Promise<string | null> {
+    const { data, error } = await supabase
+      .from('agent_public_keys')
+      .select('public_key')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      logger.error('Error getting agent public key:', error);
+      throw error;
+    }
+    return data?.public_key || null;
+  }
+
   // Service operations
   async listServices(): Promise<Service[]> {
     const { data, error } = await supabase

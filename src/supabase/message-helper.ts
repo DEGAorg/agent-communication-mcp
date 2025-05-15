@@ -58,11 +58,11 @@ export async function createMessage(
   const senderPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
   
   // Get recipient's public key from database
-  const recipient = await supabaseService.getAgent(recipientId);
-  if (!recipient) {
-    throw new Error(`Recipient agent ${recipientId} not found`);
+  const recipientPublicKeyBase64 = await supabaseService.getAgentPublicKey(recipientId);
+  if (!recipientPublicKeyBase64) {
+    throw new Error(`Recipient agent ${recipientId} not found or has no public key`);
   }
-  const recipientPublicKey = Buffer.from(recipient.public_key, 'base64');
+  const recipientPublicKey = Buffer.from(recipientPublicKeyBase64, 'base64');
   
   // Encrypt the private content
   const { encryptedMessage, encryptedKeys } = await encryptionService.encryptMessageForRecipients(
