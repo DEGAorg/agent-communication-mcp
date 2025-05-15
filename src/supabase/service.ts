@@ -84,47 +84,81 @@ export class SupabaseService {
    * Set up realtime subscriptions after authentication is complete
    */
   async setupRealtimeSubscriptions(): Promise<void> {
-    try {
-      if (!this.messageHandler) {
-        throw new Error('MessageHandler not initialized');
-      }
-      const agentId = this.getCurrentAgentId();
-      
-      this.messageChannel = supabase
-        .channel(`messages:${agentId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: TABLES.MESSAGES,
-            filter: `recipient_agent_id=eq.${agentId}`,
-          },
-          async (payload) => {
-            logger.info('Message change received:', payload);
-            try {
-              if (payload.eventType === 'INSERT') {
-                const message = payload.new as Message;
-                await this.messageHandler!.handleMessage(message);
-              }
-            } catch (error) {
-              logger.error('Error processing message:', error);
-            }
-          }
-        )
-        .subscribe();
+    const maxRetries = 3;
+    const retryDelay = 2000; // 2 seconds
+    let lastError: Error | null = null;
 
-      logger.info('Realtime subscriptions setup completed');
-    } catch (error) {
-      logger.error('Failed to setup realtime subscriptions:', {
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : error
-      });
-      throw error;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (!this.messageHandler) {
+          throw new Error('MessageHandler not initialized');
+        }
+        const agentId = this.getCurrentAgentId();
+        
+        // If we have an existing channel, unsubscribe first
+        if (this.messageChannel) {
+          await this.messageChannel.unsubscribe();
+          this.messageChannel = null;
+        }
+        
+        this.messageChannel = supabase
+          .channel(`messages:${agentId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: TABLES.MESSAGES,
+              filter: `recipient_agent_id=eq.${agentId}`,
+            },
+            async (payload) => {
+              logger.info('Message change received:', payload);
+              try {
+                if (payload.eventType === 'INSERT') {
+                  const message = payload.new as Message;
+                  await this.messageHandler!.handleMessage(message);
+                }
+              } catch (error) {
+                logger.error('Error processing message:', error);
+              }
+            }
+          )
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              logger.info('Successfully subscribed to realtime channel');
+            } else if (status === 'CLOSED') {
+              logger.warn('Realtime channel closed');
+            } else if (status === 'CHANNEL_ERROR') {
+              logger.error('Realtime channel error');
+            }
+          });
+
+        logger.info('Realtime subscriptions setup completed');
+        return; // Success, exit the retry loop
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        logger.warn(`Failed to setup realtime subscriptions (attempt ${attempt}/${maxRetries}):`, {
+          error: lastError.message,
+          attempt,
+          maxRetries
+        });
+
+        if (attempt < maxRetries) {
+          logger.info(`Retrying in ${retryDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
     }
+
+    // If we get here, all retries failed
+    logger.error('Failed to setup realtime subscriptions after all retries:', {
+      error: lastError instanceof Error ? {
+        name: lastError.name,
+        message: lastError.message,
+        stack: lastError.stack
+      } : lastError
+    });
+    throw lastError;
   }
 
   // Agent operations
