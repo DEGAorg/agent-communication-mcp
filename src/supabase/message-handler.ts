@@ -182,11 +182,16 @@ export class MessageHandler {
         serviceContent.content,
         serviceContent.version,
         service.name,
-        service.privacy_settings
+        service.privacy_settings,
+        message.id, // Set parent_message_id to the payment message
+        message.conversation_id // Use the same conversation_id as the payment message
       );
 
       await this.supabaseService!.sendMessage(deliveryMessage);
-      logger.info(`Service delivery triggered automatically after payment for service ${serviceId}`);
+      logger.info(`Service delivery triggered automatically after payment for service ${serviceId}`, {
+        conversation_id: message.conversation_id,
+        parent_message_id: message.id
+      });
     }
   }
 } 

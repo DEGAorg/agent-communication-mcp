@@ -30,6 +30,8 @@ export interface Message {
   private: EncryptedMessage;
   created_at: string;
   read: boolean;
+  conversation_id: string;
+  parent_message_id?: string;
 }
 
 // Table names

@@ -49,7 +49,9 @@ export async function createMessage(
   senderId: string,
   recipientId: string,
   publicContent: MessagePublic,
-  privateContent: Record<string, any> = {}
+  privateContent: Record<string, any> = {},
+  parentMessageId?: string,
+  conversationId?: string
 ): Promise<Message> {
   const encryptionService = new EncryptionService();
   const supabaseService = SupabaseService.getInstance();
@@ -79,7 +81,9 @@ export async function createMessage(
     private: {
       encryptedMessage,
       encryptedKeys
-    }
+    },
+    parent_message_id: parentMessageId,
+    conversation_id: conversationId
   };
 }
 
@@ -145,7 +149,9 @@ export async function createServiceDeliveryMessage(
   serviceContent: any,
   version: string,
   serviceName: string,
-  privacySettings: ServicePrivacySettings
+  privacySettings: ServicePrivacySettings,
+  parentMessageId?: string,
+  conversationId?: string
 ): Promise<Message> {
   // Create base content that is always public
   const publicData: {
@@ -208,5 +214,12 @@ export async function createServiceDeliveryMessage(
   // Only include private content if there's something to encrypt
   const privateContent = Object.keys(privateData).length > 0 ? privateData : {};
 
-  return await createMessage(senderId, recipientId, publicContent, privateContent);
+  return await createMessage(
+    senderId,
+    recipientId,
+    publicContent,
+    privateContent,
+    parentMessageId,
+    conversationId
+  );
 } 

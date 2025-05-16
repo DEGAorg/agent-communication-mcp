@@ -80,10 +80,13 @@ export interface EncryptedMessage {
 }
 
 export interface Message {
+  id: string;
   sender_agent_id: string;
   recipient_agent_id: string;
   public: MessagePublic;
   private: EncryptedMessage;
+  conversation_id: string;
+  parent_message_id?: string;
 }
 
 export interface ServicePrivacySettings {
