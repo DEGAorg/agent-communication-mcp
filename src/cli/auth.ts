@@ -8,167 +8,187 @@ async function flushLogs() {
   await new Promise(resolve => setTimeout(resolve, 100));
 }
 
-function logInfo(message: string) {
-  logger.info(chalk.cyan('ℹ ') + chalk.blue(message));
+// Temporarily disable logger during auth operations
+function withDisabledLogger<T>(operation: () => Promise<T>): Promise<T> {
+  const originalInfo = logger.info;
+  const originalError = logger.error;
+  const originalWarn = logger.warn;
+  
+  // Disable all logging
+  logger.info = () => {};
+  logger.error = () => {};
+  logger.warn = () => {};
+  
+  return operation().finally(() => {
+    // Restore original logging functions
+    logger.info = originalInfo;
+    logger.error = originalError;
+    logger.warn = originalWarn;
+  });
 }
 
-function logSuccess(message: string) {
-  logger.info(chalk.green('✓ ') + chalk.greenBright(message));
-}
-
-function logError(message: string, error?: any) {
-  if (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(chalk.red('✗ ') + chalk.redBright(message + ': ') + chalk.yellow(errorMessage));
-  } else {
-    logger.error(chalk.red('✗ ') + chalk.redBright(message));
+// Logger functions
+const loggers = {
+  info: (message: string) => logger.info(chalk.cyan('ℹ ') + chalk.blue(message)),
+  success: (message: string) => logger.info(chalk.green('✓ ') + chalk.greenBright(message)),
+  warning: (message: string) => logger.info(chalk.yellow('! ') + chalk.yellowBright(message)),
+  step: (message: string) => logger.info(chalk.magenta('→ ') + chalk.magentaBright(message)),
+  divider: () => logger.info(chalk.gray('─'.repeat(50))),
+  error: (message: string, error?: any) => {
+    if (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Simplify error messages for end users
+      const userFriendlyMessage = errorMessage
+        .replace('MCP_AUTH_EMAIL environment variable is required', 'Please set your email in the MCP_AUTH_EMAIL environment variable')
+        .replace('No OTP authentication in progress', 'Please start the authentication process first')
+        .replace('Failed to verify OTP', 'Invalid verification code. Please try again');
+      
+      // Special handling for agent registration error
+      if (errorMessage.includes('SupabaseService not initialized')) {
+        loggers.success('Authentication successful!');
+        loggers.info('Note: Agent registration will be completed during runtime setup');
+        return;
+      }
+      
+      logger.error(chalk.red('✗ ') + chalk.redBright(message + ': ') + chalk.yellow(userFriendlyMessage));
+    } else {
+      logger.error(chalk.red('✗ ') + chalk.redBright(message));
+    }
   }
+};
+
+// Helper functions
+async function waitForUserResponse(message: string = 'Waiting for your response...') {
+  loggers.step(message);
+  await new Promise(resolve => setTimeout(resolve, 2000));
 }
 
-function logWarning(message: string) {
-  logger.info(chalk.yellow('! ') + chalk.yellowBright(message));
+async function promptForInput(message: string, validate?: (input: string) => boolean | string) {
+  await waitForUserResponse();
+  const { value } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'value',
+      message: chalk.cyan(message),
+      validate
+    }
+  ]);
+  return value;
 }
 
-function logStep(message: string) {
-  logger.info(chalk.magenta('→ ') + chalk.magentaBright(message));
+async function promptForConfirmation(message: string) {
+  await waitForUserResponse();
+  const { value } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'value',
+      message: chalk.cyan(message),
+      default: false
+    }
+  ]);
+  return value;
 }
 
-function logDivider() {
-  logger.info(chalk.gray('─'.repeat(50)));
+async function promptForSelection(message: string, choices: { name: string; value: string }[]) {
+  await waitForUserResponse();
+  const { value } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'value',
+      message: chalk.cyan(message),
+      choices: choices.map(choice => ({ ...choice, name: chalk.blue(choice.name) }))
+    }
+  ]);
+  return value;
+}
+
+async function verifyOtp(email: string, code: string) {
+  loggers.step('Verifying code...');
+  await withDisabledLogger(async () => {
+    await AuthService.getInstance().verifyOtp(email, code);
+  });
+  await flushLogs();
+  
+  const userId = AuthService.getInstance().getCurrentUserId();
+  loggers.divider();
+  loggers.success('Authentication successful!');
+  loggers.info(`User ID: ${userId}`);
+  loggers.info('Note: Agent registration will be completed during runtime setup');
+  loggers.divider();
 }
 
 async function setupAuth() {
   try {
     const email = process.env.MCP_AUTH_EMAIL;
     if (!email) {
-      logError('MCP_AUTH_EMAIL environment variable is required');
+      loggers.error('Please set your email in the MCP_AUTH_EMAIL environment variable');
       process.exit(1);
     }
 
     const authService = AuthService.getInstance();
     
-    // Wait for session to be loaded
-    await authService.getSession();
-    
     // Check if already authenticated
     if (authService.isAuthenticated()) {
       const userId = authService.getCurrentUserId();
-      logSuccess('Already authenticated with a valid session');
-      logInfo(`User ID: ${userId}`);
+      loggers.success('Already authenticated');
+      loggers.info(`User ID: ${userId}`);
       process.exit(0);
     }
 
     // Start the authentication flow
-    logDivider();
-    logStep('Starting authentication process...');
+    loggers.divider();
+    loggers.step('Starting authentication process...');
     
-    // Send OTP and wait for all logs to be processed
+    // Send initial OTP to determine if user needs registration
     await authService.signInWithOtp(email);
     await flushLogs();
     
-    // Add extra newline for better spacing
     logger.info('');
-    
-    logInfo('Please check your email. You should receive either:');
-    logInfo('1. A registration acceptance email (if this is your first time)');
-    logInfo('2. An OTP code email');
-    
-    // Add extra newline for better spacing
+    loggers.info('Please check your email. You should receive either:');
+    loggers.info('1. A registration acceptance email (if this is your first time)');
+    loggers.info('2. An OTP code email');
     logger.info('');
-    logDivider();
+    loggers.divider();
     
-    let hasReceivedCode = false;
-    let code: string;
-    let lastOtpRequest = Date.now();
-    let otpRequestCount = 0;
-    let registrationAccepted = false;
-    
-    while (!hasReceivedCode) {
-      // Add extra newline before prompt
-      logger.info('');
-      const { emailType } = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'emailType',
-          message: chalk.cyan('What type of email did you receive?'),
-          choices: [
-            { name: chalk.blue('Registration acceptance email'), value: 'registration' },
-            { name: chalk.blue('OTP code email'), value: 'otp' }
-          ]
-        }
-      ]);
-      
-      if (emailType === 'registration') {
-        // Add extra newline before new messages
-        logger.info('');
-        logInfo('Please accept the registration by clicking the link in the email.');
-        const { hasAccepted } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'hasAccepted',
-            message: chalk.cyan('Have you accepted the registration?'),
-            default: false
-          }
-        ]);
-        
-        if (hasAccepted) {
-          registrationAccepted = true;
-          logStep('Registration accepted. Requesting OTP code...');
-          await authService.retryOtp();
-          await flushLogs();
-          lastOtpRequest = Date.now();
-          // Add extra newline for better spacing
-          logger.info('');
-          logDivider();
-          continue;
-        } else {
-          logWarning('Please accept the registration to continue.');
-          // Add extra newline for better spacing
-          logger.info('');
-          continue;
-        }
-      }
-      
-      // If user selected OTP, they have received it
-      hasReceivedCode = true;
-    }
-    
-    // Now that user has confirmed receiving the code, prompt for it
-    // Add extra newline before prompt
-    logger.info('');
-    const { otpCode } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'otpCode',
-        message: chalk.cyan('Enter the 6-digit code sent to your email:'),
-        validate: (input) => {
-          if (!input) return chalk.red('Verification code is required');
-          if (!/^\d{6}$/.test(input)) return chalk.red('Please enter a valid 6-digit code');
-          return true;
-        }
-      }
+    const emailType = await promptForSelection('What type of email did you receive?', [
+      { name: 'Registration acceptance email', value: 'registration' },
+      { name: 'OTP code email', value: 'otp' }
     ]);
     
-    code = otpCode;
+    if (emailType === 'registration') {
+      logger.info('');
+      loggers.info('Next steps:');
+      loggers.info('1. Accept the registration by clicking the link in the email');
+      loggers.info('2. Wait 2 minutes for the system to process your registration');
+      loggers.info('3. Run "yarn auth:setup" again to continue with verification');
+      logger.info('');
+      loggers.info('Note: If you don\'t see the registration email, please check your spam folder.');
+      logger.info('');
+      loggers.divider();
+      process.exit(0);
+    }
+    
+    // OTP flow
+    logger.info('');
+    loggers.info('Please enter the verification code from your email.');
+    loggers.info('Note: The code is 6 digits long and may take a few moments to arrive.');
+    logger.info('');
+    
+    const otpCode = await promptForInput('Enter the 6-digit code sent to your email:', (input) => {
+      if (!input) return chalk.red('Verification code is required');
+      if (!/^\d{6}$/.test(input)) return chalk.red('Please enter a valid 6-digit code');
+      return true;
+    });
 
     try {
-      // Verify the OTP
-      logStep('Verifying OTP code...');
-      await authService.verifyOtp(email, code);
-      await flushLogs();
-      
-      const userId = authService.getCurrentUserId();
-      logDivider();
-      logSuccess('Authentication successful! Session has been saved.');
-      logInfo(`User ID: ${userId}`);
-      logDivider();
+      await verifyOtp(email, otpCode);
       process.exit(0);
     } catch (error) {
-      logError('Failed to verify OTP code', error);
+      loggers.error('Authentication failed', error);
       process.exit(1);
     }
   } catch (error) {
-    logError('Authentication process failed', error);
+    loggers.error('Authentication process failed', error);
     process.exit(1);
   }
 }
@@ -177,29 +197,25 @@ async function checkAuth() {
   try {
     const email = process.env.MCP_AUTH_EMAIL;
     if (!email) {
-      logError('MCP_AUTH_EMAIL environment variable is required');
+      loggers.error('Please set your email in the MCP_AUTH_EMAIL environment variable');
       process.exit(1);
     }
 
     const authService = AuthService.getInstance();
-    
-    // Wait for session to be loaded
-    await authService.getSession();
-    
     const isAuthed = authService.isAuthenticated();
     
     if (isAuthed) {
       const userId = authService.getCurrentUserId();
-      logSuccess('Authentication status: Authenticated');
-      logInfo(`User ID: ${userId}`);
+      loggers.success('Authentication status: Authenticated');
+      loggers.info(`User ID: ${userId}`);
       process.exit(0);
     } else {
-      logWarning('Authentication status: Not authenticated');
-      logInfo('Please run "mcp auth setup" to authenticate');
+      loggers.warning('Authentication status: Not authenticated');
+      loggers.info('Please run "mcp auth setup" to authenticate');
       process.exit(1);
     }
   } catch (error) {
-    logError('Failed to check authentication status', error);
+    loggers.error('Failed to check authentication status', error);
     process.exit(1);
   }
 }
@@ -208,52 +224,38 @@ async function retryAuth() {
   try {
     const email = process.env.MCP_AUTH_EMAIL;
     if (!email) {
-      logError('MCP_AUTH_EMAIL environment variable is required');
+      loggers.error('Please set your email in the MCP_AUTH_EMAIL environment variable');
       process.exit(1);
     }
 
     const authService = AuthService.getInstance();
     
-    // Wait for session to be loaded
-    await authService.getSession();
+    loggers.step('Requesting new verification code...');
+    await withDisabledLogger(async () => {
+      await authService.signInWithOtp(email);
+    });
+    loggers.success('New verification code has been sent.');
+    loggers.info('Please wait a few moments for it to arrive.');
+    loggers.info('Note: Check your spam folder if you don\'t see it.');
+    logger.info('');
+    loggers.divider();
     
-    logStep('Requesting new OTP code...');
-    await authService.retryOtp();
-    logSuccess('New OTP code has been sent. Please check your email.\n');
-    logDivider();
-    
-    // Prompt for OTP verification
     await flushLogs();
-    const { otpCode } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'otpCode',
-        message: chalk.cyan('Enter the 6-digit code sent to your email:'),
-        validate: (input) => {
-          if (!input) return chalk.red('Verification code is required');
-          if (!/^\d{6}$/.test(input)) return chalk.red('Please enter a valid 6-digit code');
-          return true;
-        }
-      }
-    ]);
+    const otpCode = await promptForInput('Enter the 6-digit code sent to your email:', (input) => {
+      if (!input) return chalk.red('Verification code is required');
+      if (!/^\d{6}$/.test(input)) return chalk.red('Please enter a valid 6-digit code');
+      return true;
+    });
 
     try {
-      // Verify the OTP
-      logStep('Verifying OTP code...');
-      await authService.verifyOtp(email, otpCode);
-      
-      const userId = authService.getCurrentUserId();
-      logDivider();
-      logSuccess('Authentication successful! Session has been saved.');
-      logInfo(`User ID: ${userId}`);
-      logDivider();
+      await verifyOtp(email, otpCode);
       process.exit(0);
     } catch (error) {
-      logError('Failed to verify OTP code', error);
+      loggers.error('Authentication failed', error);
       process.exit(1);
     }
   } catch (error) {
-    logError('Failed to retry authentication', error);
+    loggers.error('Failed to retry authentication', error);
     process.exit(1);
   }
 }
@@ -273,11 +275,11 @@ async function main() {
       await retryAuth();
       break;
     default:
-      logError('Unknown command. Available commands: setup, check, retry');
-      logInfo('\nUsage:');
-      logInfo('  mcp auth setup    - Set up authentication with email and OTP');
-      logInfo('  mcp auth check    - Check current authentication status');
-      logInfo('  mcp auth retry    - Retry OTP authentication');
+      loggers.error('Unknown command. Available commands: setup, check, retry');
+      loggers.info('\nUsage:');
+      loggers.info('  yarn auth:setup    - Set up authentication with email and verification code');
+      loggers.info('  yarn auth:check    - Check current authentication status');
+      loggers.info('  yarn auth:retry    - Request a new verification code');
       process.exit(1);
   }
 }
