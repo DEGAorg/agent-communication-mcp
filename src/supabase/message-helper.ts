@@ -72,7 +72,6 @@ export async function createMessage(
   const { encryptedMessage, encryptedKeys } = await encryptionService.encryptMessageForRecipients(
     JSON.stringify(privateContent),
     recipientPublicKey,
-    recipientPublicKey, // For now, we're using the same key for auditor
     senderPrivateKey
   );
 
