@@ -198,7 +198,6 @@ export class AuthService {
         logger.error({
           msg: 'Error sending OTP',
           error: error.message,
-          details: error.details,
           context: {
             email,
             timestamp: new Date().toISOString()

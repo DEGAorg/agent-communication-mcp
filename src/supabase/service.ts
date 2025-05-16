@@ -212,7 +212,7 @@ export class SupabaseService {
             async (payload) => {
               logger.info('Message change received:', payload);
               try {
-                if (payload.eventType === 'INSERT') {
+                if (payload.eventType === 'INSERT' && payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
                   const message = payload.new as Message;
                   await this.messageHandler!.handleMessage(message);
                 }
@@ -222,7 +222,7 @@ export class SupabaseService {
                   error: error instanceof Error ? error.message : 'Unknown error',
                   details: error instanceof Error ? error.stack : String(error),
                   context: {
-                    messageId: payload.new?.id,
+                    messageId: payload.new && typeof payload.new === 'object' && 'id' in payload.new ? payload.new.id : 'unknown',
                     timestamp: new Date().toISOString()
                   }
                 });
