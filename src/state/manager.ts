@@ -106,6 +106,37 @@ export class StateManager {
     logger.info(`System state changed to: ${newState}`);
   }
 
+  private async processUnreadMessages(): Promise<void> {
+    try {
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new Error('No authenticated agent found');
+      }
+
+      // Get all unread messages for this agent
+      const messages = await this.supabaseService.getUnreadMessages(agentId);
+      
+      if (messages.length > 0) {
+        logger.info(`Processing ${messages.length} unread messages`);
+        
+        // Process each message sequentially to maintain order
+        for (const message of messages) {
+          try {
+            await this.messageHandler.handleMessage(message);
+          } catch (error) {
+            logger.error(`Error processing unread message ${message.id}:`, error);
+            // Continue processing other messages even if one fails
+          }
+        }
+        
+        logger.info('Finished processing unread messages');
+      }
+    } catch (error) {
+      logger.error('Error processing unread messages:', error);
+      throw error;
+    }
+  }
+
   async initialize(): Promise<void> {
     try {
       // Start connection process
@@ -186,6 +217,21 @@ export class StateManager {
           state: this.currentState
         });
         throw error;
+      }
+
+      // Process any unread messages that arrived while offline
+      try {
+        await this.processUnreadMessages();
+      } catch (error) {
+        logger.error('Failed to process unread messages:', {
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : error,
+          state: this.currentState
+        });
+        // Don't throw here - we want to continue initialization even if message processing fails
       }
 
       // Check agent registration

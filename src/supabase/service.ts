@@ -352,6 +352,18 @@ export class SupabaseService {
     return data || [];
   }
 
+  async getUnreadMessages(agentId: string): Promise<Message[]> {
+    const { data, error } = await supabase
+      .from(TABLES.MESSAGES)
+      .select('*')
+      .eq('recipient_agent_id', agentId)
+      .eq('read', false)
+      .order('created_at', { ascending: true }); // Process oldest messages first
+
+    if (error) throw error;
+    return data || [];
+  }
+
   async markMessageAsRead(messageId: string): Promise<void> {
     const { error } = await supabase
       .from(TABLES.MESSAGES)

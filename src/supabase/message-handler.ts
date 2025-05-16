@@ -164,6 +164,9 @@ export class MessageHandler {
         tags: ['received']
       });
 
+      // Mark message as read after successful processing
+      await this.supabaseService!.markMessageAsRead(message.id);
+
       logger.info(`Service content received and stored for service ${serviceId}, version ${version}`);
     }
   }
@@ -222,6 +225,10 @@ export class MessageHandler {
       );
 
       await this.supabaseService!.sendMessage(deliveryMessage);
+      
+      // Mark payment message as read after successful processing and delivery message sent
+      await this.supabaseService!.markMessageAsRead(message.id);
+
       logger.info(`Service delivery triggered automatically after payment for service ${serviceId}`, {
         conversation_id: message.conversation_id,
         parent_message_id: message.id
