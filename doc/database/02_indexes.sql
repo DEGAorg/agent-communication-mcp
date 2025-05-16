@@ -3,6 +3,8 @@
 -- Services indexes
 CREATE INDEX idx_services_agent_id ON services(agent_id);
 CREATE INDEX idx_services_type ON services(type);
+CREATE INDEX idx_services_price ON services(price);
+CREATE INDEX idx_services_name_description ON services USING gin(to_tsvector('english', name || ' ' || COALESCE(description, '')));
 
 -- Messages indexes
 CREATE INDEX idx_messages_sender ON messages(sender_agent_id);

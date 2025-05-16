@@ -26,6 +26,13 @@ export class SupabaseService {
     return SupabaseService.instance;
   }
 
+  /**
+   * Get the Supabase client instance
+   */
+  getSupabaseClient() {
+    return supabase;
+  }
+
   setAuthService(authService: AuthService) {
     this.authService = authService;
   }
@@ -295,12 +302,52 @@ export class SupabaseService {
   }
 
   // Service operations
-  async listServices(): Promise<Service[]> {
-    const { data, error } = await supabase
+  async listServices(filters?: {
+    topics?: string[];
+    minPrice?: number;
+    maxPrice?: number;
+    serviceType?: string;
+  }): Promise<Service[]> {
+    let query = supabase
       .from(TABLES.SERVICES)
       .select('*');
 
-    if (error) throw error;
+    // Apply price filters
+    if (filters?.minPrice !== undefined) {
+      query = query.gte('price', filters.minPrice);
+    }
+    if (filters?.maxPrice !== undefined) {
+      query = query.lte('price', filters.maxPrice);
+    }
+
+    // Apply service type filter
+    if (filters?.serviceType) {
+      query = query.eq('type', filters.serviceType);
+    }
+
+    // Apply topic filters using full-text search
+    if (filters?.topics && filters.topics.length > 0) {
+      // Create a text search query for each topic
+      const searchQueries = filters.topics.map(topic => {
+        // Convert topic to tsquery format
+        const searchTerm = topic.trim().replace(/\s+/g, ' & ');
+        return `to_tsvector('english', name || ' ' || COALESCE(description, '')) @@ to_tsquery('english', '${searchTerm}:*')`;
+      });
+
+      // Combine all search queries with OR
+      const searchQuery = searchQueries.join(' OR ');
+      
+      // Use raw SQL for full-text search
+      query = query.or(searchQuery);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      logger.error('Error listing services:', error);
+      throw error;
+    }
+
     return data || [];
   }
 

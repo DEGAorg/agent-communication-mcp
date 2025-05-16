@@ -16,16 +16,34 @@ import { ReceivedContentStorage } from './storage/received-content.js';
 export const ALL_TOOLS = [
   {
     name: 'listServices',
-    description: 'List all available services',
+    description: 'Retrieve a list of available services in the marketplace with optional filtering by topics or interests. This tool allows agents to discover services that match their specific needs. You can filter services by topics, price range, or service type. Returns a list of matching services with their details including name, type, price, and description.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        topics: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional list of topics to filter services by'
+        },
+        minPrice: {
+          type: 'number',
+          description: 'Optional minimum price filter'
+        },
+        maxPrice: {
+          type: 'number',
+          description: 'Optional maximum price filter'
+        },
+        serviceType: {
+          type: 'string',
+          description: 'Optional service type filter'
+        }
+      },
       required: []
     }
   },
   {
     name: 'registerService',
-    description: 'Register a new service',
+    description: 'Register a new service that your agent will provide to other agents. This tool is used by service providers to create a new service offering in the marketplace. You must specify the service details including name, type, price, description, and privacy settings. The privacy settings determine how information about the service, payments, and deliveries will be shared.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -57,7 +75,7 @@ export const ALL_TOOLS = [
   },
   {
     name: 'storeServiceContent',
-    description: 'Store content for a service that will be delivered to customers',
+    description: 'Store the content that will be delivered to customers when they purchase your service. This tool is used by service providers to prepare and store the content locally before it is delivered. The content will be automatically delivered to customers once their payment is confirmed. You must specify the service ID, the content to be delivered, and a version number. Optional tags can be added for better organization.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -74,7 +92,7 @@ export const ALL_TOOLS = [
   },
   {
     name: 'servicePayment',
-    description: 'Handle service payment',
+    description: 'Initiate a service purchase or hiring by sending a payment notification. This tool is used by agents who want to purchase or hire a service from another agent. You must provide the service ID, payment amount, and the Midnight blockchain transaction ID that proves the payment. This will trigger the service delivery process once the payment is confirmed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -86,27 +104,8 @@ export const ALL_TOOLS = [
     }
   },
   {
-    name: 'serviceDelivery',
-    description: 'Deliver service data',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        serviceId: { type: 'string' },
-        data: { type: 'object' },
-        privacyPreferences: {
-          type: 'object',
-          properties: {
-            deliveryPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] }
-          },
-          required: ['deliveryPrivacy']
-        }
-      },
-      required: ['serviceId', 'data', 'privacyPreferences']
-    }
-  },
-  {
     name: 'queryServiceDelivery',
-    description: 'Query the status and content of a service delivery',
+    description: 'Check the status and retrieve the content of a service delivery. This tool is used by agents who have purchased a service to check if their service has been delivered and to retrieve the content. You must provide the payment message ID and service ID to track the delivery status.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -143,7 +142,7 @@ export class ToolHandler {
 
       switch (toolName) {
         case 'listServices':
-          return await this.handleListServices();
+          return await this.handleListServices(toolArgs);
         
         case 'registerService':
           return await this.handleRegisterService(toolArgs);
@@ -153,9 +152,6 @@ export class ToolHandler {
         
         case 'servicePayment':
           return await this.handleServicePayment(toolArgs);
-        
-        case 'serviceDelivery':
-          return await this.handleServiceDelivery(toolArgs);
         
         case 'queryServiceDelivery':
           return await this.handleQueryServiceDelivery(toolArgs);
@@ -187,17 +183,38 @@ export class ToolHandler {
     }
   }
 
-  private async handleListServices() {
-    const services = await this.supabaseService.listServices();
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(services, null, 2),
-          mimeType: 'application/json'
-        }
-      ]
-    };
+  private async handleListServices(args: { 
+    topics?: string[]; 
+    minPrice?: number; 
+    maxPrice?: number; 
+    serviceType?: string; 
+  } = {}) {
+    try {
+      const services = await this.supabaseService.listServices(args);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              total: services.length,
+              services,
+              filters: args
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error({ err: error }, 'Error listing services');
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to list services: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   private async handleRegisterService(args: Omit<Service, 'id' | 'agent_id'>) {
@@ -377,85 +394,6 @@ export class ToolHandler {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to process service payment: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  private async handleServiceDelivery(args: { serviceId: string; data: any; privacyPreferences?: ClientPrivacyPreferences }) {
-    const { serviceId, data, privacyPreferences } = args;
-    if (!serviceId || !data) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'Missing required parameters: serviceId and data'
-      );
-    }
-
-    try {
-      // Get the current user ID from the auth service
-      const agentId = this.authService.getCurrentUserId();
-      if (!agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'No authenticated agent found'
-        );
-      }
-
-      // Get service details to find the service provider
-      const service = await this.supabaseService.getServiceById(serviceId);
-      if (!service) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Service with ID ${serviceId} not found`
-        );
-      }
-
-      // Get the stored service content
-      const serviceContentStorage = ServiceContentStorage.getInstance();
-      const serviceContent = await serviceContentStorage.getContent(serviceId);
-      
-      if (!serviceContent) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `No content found for service ${serviceId}`
-        );
-      }
-
-      // Create and send the delivery message
-      const message = await createServiceDeliveryMessage(
-        service.agent_id, // sender is the service provider
-        agentId, // recipient is the current agent
-        serviceId,
-        serviceContent.content,
-        serviceContent.version,
-        service.name,
-        service.privacy_settings
-      );
-
-      await this.supabaseService.sendMessage(message);
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              status: 'success',
-              message: 'Service content delivered successfully',
-              serviceId,
-              version: serviceContent.version,
-              privacy: service.privacy_settings.deliveryPrivacy
-            }, null, 2),
-            mimeType: 'application/json'
-          }
-        ]
-      };
-    } catch (error) {
-      logger.error('Error handling service delivery:', error);
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to deliver service content: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
