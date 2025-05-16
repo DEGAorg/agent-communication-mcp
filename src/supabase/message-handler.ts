@@ -6,6 +6,7 @@ import { EncryptionService } from '../encryption/service.js';
 import { AuthService } from './auth.js';
 import { SupabaseService } from './service.js';
 import { createServiceDeliveryMessage } from './message-helper.js';
+import { ReceivedContentStorage } from '../storage/received-content.js';
 
 export class MessageHandler {
   private static instance: MessageHandler;
@@ -13,6 +14,7 @@ export class MessageHandler {
   private encryptionService: EncryptionService | null = null;
   private authService: AuthService | null = null;
   private supabaseService: SupabaseService | null = null;
+  private receivedContentStorage: ReceivedContentStorage | null = null;
 
   private constructor() {}
 
@@ -39,14 +41,22 @@ export class MessageHandler {
     this.supabaseService = supabaseService;
   }
 
+  setReceivedContentStorage(receivedContentStorage: ReceivedContentStorage) {
+    this.receivedContentStorage = receivedContentStorage;
+  }
+
+  private ensureServicesInitialized(): void {
+    if (!this.stateManager || !this.encryptionService || !this.authService || !this.supabaseService || !this.receivedContentStorage) {
+      throw new Error('Required services not initialized');
+    }
+  }
+
   async handleMessage(message: Message): Promise<void> {
     try {
-      if (!this.stateManager || !this.encryptionService || !this.authService || !this.supabaseService) {
-        throw new Error('Required services not initialized');
-      }
+      this.ensureServicesInitialized();
 
       // Ensure system is ready before handling any messages
-      await this.stateManager.ensureReadyWithRecovery();
+      await this.stateManager!.ensureReadyWithRecovery();
 
       const { public: publicContent, private: privateContent } = message;
       const { topic, content } = publicContent;
@@ -64,7 +74,7 @@ export class MessageHandler {
         const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
         
         decryptedPrivateContent = JSON.parse(
-          await this.encryptionService.decryptMessage(
+          await this.encryptionService!.decryptMessage(
             privateContent.encryptedMessage,
             privateContent.encryptedKeys.recipient,
             senderPublicKey,
@@ -120,17 +130,41 @@ export class MessageHandler {
         } : {})
       };
 
-      // Store the delivered content
-      const serviceContentStorage = ServiceContentStorage.getInstance();
-      await serviceContentStorage.storeContent({
+      // If content is encrypted, decrypt it
+      let decryptedContent = combinedContent;
+      if (privateContent.encryptedMessage) {
+        try {
+          const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
+          const senderPublicKeyBase64 = await this.supabaseService!.getAgentPublicKey(message.sender_agent_id);
+          if (!senderPublicKeyBase64) {
+            throw new Error(`Sender agent ${message.sender_agent_id} not found or has no public key`);
+          }
+          const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
+          
+          decryptedContent = JSON.parse(
+            await this.encryptionService!.decryptMessage(
+              privateContent.encryptedMessage,
+              privateContent.encryptedKeys.recipient,
+              senderPublicKey,
+              recipientPrivateKey
+            )
+          );
+        } catch (error) {
+          logger.error('Error decrypting delivery message:', error);
+          throw new Error('Failed to decrypt delivery message');
+        }
+      }
+
+      // Store the received content for the recipient
+      await this.receivedContentStorage!.storeContent({
+        payment_message_id: message.parent_message_id!,
         service_id: serviceId,
-        agent_id: message.recipient_agent_id,
-        content: combinedContent,
+        content: decryptedContent,
         version,
-        tags: ['delivered']
+        tags: ['received']
       });
 
-      logger.info(`Service content delivered for service ${serviceId}, version ${version}`);
+      logger.info(`Service content received and stored for service ${serviceId}, version ${version}`);
     }
   }
 

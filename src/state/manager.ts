@@ -3,6 +3,7 @@ import { AuthService } from '../supabase/auth.js';
 import { SupabaseService } from '../supabase/service.js';
 import { EncryptionService } from '../encryption/service.js';
 import { MessageHandler } from '../supabase/message-handler.js';
+import { ReceivedContentStorage } from '../storage/received-content.js';
 
 export enum SystemState {
   UNINITIALIZED = 'UNINITIALIZED',
@@ -24,6 +25,7 @@ export class StateManager {
   private supabaseService: SupabaseService | null = null;
   private encryptionService: EncryptionService | null = null;
   private messageHandler: MessageHandler | null = null;
+  private receivedContentStorage: ReceivedContentStorage | null = null;
 
   private constructor() {}
 
@@ -44,6 +46,7 @@ export class StateManager {
       this.supabaseService = SupabaseService.getInstance();
       this.messageHandler = MessageHandler.getInstance();
       this.encryptionService = new EncryptionService();
+      this.receivedContentStorage = ReceivedContentStorage.getInstance();
 
       // Set up dependencies
       this.authService.setSupabaseService(this.supabaseService);
@@ -53,6 +56,7 @@ export class StateManager {
       this.messageHandler.setStateManager(this);
       this.messageHandler.setEncryptionService(this.encryptionService);
       this.messageHandler.setSupabaseService(this.supabaseService);
+      this.messageHandler.setReceivedContentStorage(this.receivedContentStorage);
 
       logger.info('All services created and dependencies set up');
     } catch (error) {
@@ -95,6 +99,13 @@ export class StateManager {
       throw new Error('MessageHandler not initialized');
     }
     return this.messageHandler;
+  }
+
+  getReceivedContentStorage(): ReceivedContentStorage {
+    if (!this.receivedContentStorage) {
+      throw new Error('ReceivedContentStorage not initialized');
+    }
+    return this.receivedContentStorage;
   }
 
   private setState(newState: SystemState, error: Error | null = null) {

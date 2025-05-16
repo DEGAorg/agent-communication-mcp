@@ -3,6 +3,8 @@ import { supabase, TABLES, Agent, Service, Message, MessageCreate } from './conf
 import { logger } from '../logger.js';
 import { MessageHandler } from './message-handler.js';
 import { AuthService } from './auth.js';
+import { createClient } from '@supabase/supabase-js';
+import { TRANSACTION_TYPES } from './message-types.js';
 
 export class SupabaseService {
   private static instance: SupabaseService;
@@ -357,6 +359,47 @@ export class SupabaseService {
       .eq('id', messageId);
 
     if (error) throw error;
+  }
+
+  async getMessageById(messageId: string): Promise<Message | null> {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('id', messageId)
+        .single();
+
+      if (error) {
+        logger.error('Error getting message by ID:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      logger.error('Error getting message by ID:', error);
+      return null;
+    }
+  }
+
+  async getMessageByParentId(parentMessageId: string): Promise<Message | null> {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('parent_message_id', parentMessageId)
+        .eq('public->content->data->type', TRANSACTION_TYPES.SERVICE_DELIVERY)
+        .single();
+
+      if (error) {
+        logger.error('Error getting message by parent ID:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      logger.error('Error getting message by parent ID:', error);
+      return null;
+    }
   }
 
   // Cleanup

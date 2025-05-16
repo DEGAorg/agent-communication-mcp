@@ -10,6 +10,7 @@ import { createPaymentNotificationMessage, createMessageContent, createMessagePu
 import { ServiceContentStorage } from './storage/service-content.js';
 import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS } from './supabase/message-types.js';
 import { createServiceDeliveryMessage } from './supabase/message-helper.js';
+import { ReceivedContentStorage } from './storage/received-content.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -104,14 +105,15 @@ export const ALL_TOOLS = [
     }
   },
   {
-    name: 'revealData',
-    description: 'Reveal encrypted data',
+    name: 'queryServiceDelivery',
+    description: 'Query the status and content of a service delivery',
     inputSchema: {
       type: 'object',
       properties: {
-        messageId: { type: 'string' }
+        paymentMessageId: { type: 'string', description: 'The ID of the payment message' },
+        serviceId: { type: 'string', description: 'The ID of the service' }
       },
-      required: ['messageId']
+      required: ['paymentMessageId', 'serviceId']
     }
   }
 ];
@@ -155,8 +157,8 @@ export class ToolHandler {
         case 'serviceDelivery':
           return await this.handleServiceDelivery(toolArgs);
         
-        case 'revealData':
-          return await this.handleRevealData(toolArgs);
+        case 'queryServiceDelivery':
+          return await this.handleQueryServiceDelivery(toolArgs);
         
         default:
           throw new McpError(
@@ -460,17 +462,156 @@ export class ToolHandler {
     }
   }
 
-  private async handleRevealData(args: { messageId: string }) {
-    const { messageId } = args;
-    if (!messageId) {
+  private async handleQueryServiceDelivery(args: { paymentMessageId: string; serviceId: string }) {
+    const { paymentMessageId, serviceId } = args;
+    if (!paymentMessageId || !serviceId) {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'Missing required parameter: messageId'
+        'Missing required parameters: paymentMessageId and serviceId'
       );
     }
 
-    // TODO: Implement data revelation logic
-    throw new Error('Not implemented: Data revelation');
+    try {
+      // Get the current user ID from the auth service
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'No authenticated agent found'
+        );
+      }
+
+      // Get the payment message to verify ownership
+      const paymentMessage = await this.supabaseService.getMessageById(paymentMessageId);
+      if (!paymentMessage) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Payment message ${paymentMessageId} not found`
+        );
+      }
+
+      // Verify the agent is the recipient of the payment
+      if (paymentMessage.recipient_agent_id !== agentId) {
+        throw new McpError(
+          ErrorCode.Unauthorized,
+          'Only the payment recipient can query service delivery status'
+        );
+      }
+
+      // First check received content storage
+      const receivedContentStorage = ReceivedContentStorage.getInstance();
+      const receivedContent = await receivedContentStorage.getContent(agentId, paymentMessageId);
+      
+      if (receivedContent) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'completed',
+                message: 'Service content retrieved from local storage',
+                serviceId,
+                version: receivedContent.version,
+                content: receivedContent.content,
+                tags: receivedContent.tags,
+                created_at: receivedContent.created_at,
+                updated_at: receivedContent.updated_at
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      }
+
+      // If not found locally, check for delivery message
+      const deliveryMessage = await this.supabaseService.getMessageByParentId(paymentMessageId);
+      
+      if (!deliveryMessage) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'pending',
+                message: 'Service delivery not yet completed',
+                serviceId,
+                paymentMessageId
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      }
+
+      // If we have a delivery message but no local content, decrypt and store it
+      try {
+        const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
+        const senderPublicKeyBase64 = await this.supabaseService.getAgentPublicKey(deliveryMessage.sender_agent_id);
+        if (!senderPublicKeyBase64) {
+          throw new Error(`Sender agent ${deliveryMessage.sender_agent_id} not found or has no public key`);
+        }
+        const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
+        
+        const decryptedContent = JSON.parse(
+          await this.encryptionService.decryptMessage(
+            deliveryMessage.private.encryptedMessage,
+            deliveryMessage.private.encryptedKeys.recipient,
+            senderPublicKey,
+            recipientPrivateKey
+          )
+        );
+        
+        // Store the decrypted content
+        await receivedContentStorage.storeContent({
+          payment_message_id: paymentMessageId,
+          service_id: serviceId,
+          content: decryptedContent,
+          version: deliveryMessage.public.content.data.version,
+          tags: ['received', 'decrypted']
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'completed',
+                message: 'Service content decrypted and stored',
+                serviceId,
+                version: deliveryMessage.public.content.data.version,
+                content: decryptedContent
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      } catch (error) {
+        logger.error('Error decrypting delivery message:', error);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'error',
+                message: 'Failed to decrypt delivery message',
+                serviceId,
+                deliveryMessageId: deliveryMessage.id
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      }
+    } catch (error) {
+      logger.error('Error querying service delivery:', error);
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to query service delivery: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   async cleanup() {
