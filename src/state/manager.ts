@@ -21,48 +21,55 @@ export class StateManager {
   private static instance: StateManager;
   private currentState: SystemState = SystemState.UNINITIALIZED;
   private error: Error | null = null;
-  private authService: AuthService | null = null;
-  private supabaseService: SupabaseService | null = null;
-  private encryptionService: EncryptionService | null = null;
-  private messageHandler: MessageHandler | null = null;
-  private receivedContentStorage: ReceivedContentStorage | null = null;
+  private readonly authService: AuthService;
+  private readonly supabaseService: SupabaseService;
+  private readonly encryptionService: EncryptionService;
+  private readonly messageHandler: MessageHandler;
+  private readonly receivedContentStorage: ReceivedContentStorage;
 
-  private constructor() {}
+  private constructor(
+    authService: AuthService,
+    supabaseService: SupabaseService,
+    encryptionService: EncryptionService,
+    messageHandler: MessageHandler,
+    receivedContentStorage: ReceivedContentStorage
+  ) {
+    this.authService = authService;
+    this.supabaseService = supabaseService;
+    this.encryptionService = encryptionService;
+    this.messageHandler = messageHandler;
+    this.receivedContentStorage = receivedContentStorage;
+  }
 
   static getInstance(): StateManager {
     if (!StateManager.instance) {
-      StateManager.instance = new StateManager();
+      // Create service instances
+      const authService = AuthService.getInstance();
+      const supabaseService = SupabaseService.getInstance();
+      const messageHandler = MessageHandler.getInstance();
+      const encryptionService = new EncryptionService();
+      const receivedContentStorage = ReceivedContentStorage.getInstance();
+
+      // Create the instance first
+      StateManager.instance = new StateManager(
+        authService,
+        supabaseService,
+        encryptionService,
+        messageHandler,
+        receivedContentStorage
+      );
+
+      // Set up dependencies after instance creation
+      authService.setSupabaseService(supabaseService);
+      supabaseService.setAuthService(authService);
+      supabaseService.setMessageHandler(messageHandler);
+      messageHandler.setAuthService(authService);
+      messageHandler.setStateManager(StateManager.instance);
+      messageHandler.setEncryptionService(encryptionService);
+      messageHandler.setSupabaseService(supabaseService);
+      messageHandler.setReceivedContentStorage(receivedContentStorage);
     }
     return StateManager.instance;
-  }
-
-  /**
-   * Initialize all services and set up dependencies
-   */
-  async initializeServices(): Promise<void> {
-    try {
-      // Create service instances
-      this.authService = AuthService.getInstance();
-      this.supabaseService = SupabaseService.getInstance();
-      this.messageHandler = MessageHandler.getInstance();
-      this.encryptionService = new EncryptionService();
-      this.receivedContentStorage = ReceivedContentStorage.getInstance();
-
-      // Set up dependencies
-      this.authService.setSupabaseService(this.supabaseService);
-      this.supabaseService.setAuthService(this.authService);
-      this.supabaseService.setMessageHandler(this.messageHandler);
-      this.messageHandler.setAuthService(this.authService);
-      this.messageHandler.setStateManager(this);
-      this.messageHandler.setEncryptionService(this.encryptionService);
-      this.messageHandler.setSupabaseService(this.supabaseService);
-      this.messageHandler.setReceivedContentStorage(this.receivedContentStorage);
-
-      logger.info('All services created and dependencies set up');
-    } catch (error) {
-      this.setState(SystemState.ERROR, error instanceof Error ? error : new Error(String(error)));
-      throw error;
-    }
   }
 
   getState(): SystemState {
@@ -74,37 +81,22 @@ export class StateManager {
   }
 
   getAuthService(): AuthService {
-    if (!this.authService) {
-      throw new Error('AuthService not initialized');
-    }
     return this.authService;
   }
 
   getSupabaseService(): SupabaseService {
-    if (!this.supabaseService) {
-      throw new Error('SupabaseService not initialized');
-    }
     return this.supabaseService;
   }
 
   getEncryptionService(): EncryptionService {
-    if (!this.encryptionService) {
-      throw new Error('EncryptionService not initialized');
-    }
     return this.encryptionService;
   }
 
   getMessageHandler(): MessageHandler {
-    if (!this.messageHandler) {
-      throw new Error('MessageHandler not initialized');
-    }
     return this.messageHandler;
   }
 
   getReceivedContentStorage(): ReceivedContentStorage {
-    if (!this.receivedContentStorage) {
-      throw new Error('ReceivedContentStorage not initialized');
-    }
     return this.receivedContentStorage;
   }
 
@@ -116,13 +108,6 @@ export class StateManager {
 
   async initialize(): Promise<void> {
     try {
-      // First initialize all services and set up dependencies
-      await this.initializeServices();
-
-      if (!this.authService || !this.supabaseService || !this.encryptionService) {
-        throw new Error('Required services not initialized');
-      }
-
       // Start connection process
       this.setState(SystemState.CONNECTING);
       try {
