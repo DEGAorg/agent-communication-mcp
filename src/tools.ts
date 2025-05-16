@@ -500,7 +500,7 @@ export class ToolHandler {
 
       // First check received content storage
       const receivedContentStorage = ReceivedContentStorage.getInstance();
-      const receivedContent = await receivedContentStorage.getContent(agentId, paymentMessageId);
+      const receivedContent = await receivedContentStorage.getContent(serviceId, paymentMessageId);
       
       if (receivedContent) {
         return {

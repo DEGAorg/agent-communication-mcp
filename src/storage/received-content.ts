@@ -70,9 +70,9 @@ export class ReceivedContentStorage {
     }
   }
 
-  async getContent(agentId: string, paymentMessageId: string): Promise<ReceivedContent | null> {
+  async getContent(serviceId: string, paymentMessageId: string): Promise<ReceivedContent | null> {
     try {
-      const contentPath = this.getContentPath(agentId, paymentMessageId);
+      const contentPath = this.getContentPath(serviceId, paymentMessageId);
       if (!fs.existsSync(contentPath)) {
         return null;
       }
