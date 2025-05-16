@@ -1,5 +1,5 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { supabase, TABLES, Agent, Service, Message } from './config.js';
+import { supabase, TABLES, Agent, Service, Message, MessageCreate } from './config.js';
 import { logger } from '../logger.js';
 import { MessageHandler } from './message-handler.js';
 import { AuthService } from './auth.js';
@@ -328,7 +328,7 @@ export class SupabaseService {
   }
 
   // Message operations
-  async sendMessage(message: Omit<Message, 'id' | 'created_at' | 'read'>): Promise<Message> {
+  async sendMessage(message: MessageCreate): Promise<Message> {
     const { data, error } = await supabase
       .from(TABLES.MESSAGES)
       .insert([{ ...message, read: false }])

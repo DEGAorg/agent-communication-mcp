@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config.js';
-import { Message as MessageType, MessagePublic, EncryptedMessage, ServicePrivacySettings } from './message-types.js';
+import { Message as MessageType, ServicePrivacySettings, MessageCreate } from './message-types.js';
 import { logger } from '../logger.js';
 
 // Database types
@@ -22,17 +22,8 @@ export interface Service {
   privacy_settings: ServicePrivacySettings;
 }
 
-export interface Message {
-  id: string;
-  sender_agent_id: string;
-  recipient_agent_id: string;
-  public: MessagePublic;
-  private: EncryptedMessage;
-  created_at: string;
-  read: boolean;
-  conversation_id: string;
-  parent_message_id?: string;
-}
+export type Message = MessageType;
+export type { MessageCreate };
 
 // Table names
 export const TABLES = {

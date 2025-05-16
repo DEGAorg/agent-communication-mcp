@@ -9,9 +9,11 @@ import {
   MESSAGE_PURPOSE,
   MessagePurpose,
   ServicePrivacySettings,
+  MessageCreate
 } from './message-types.js';
 import { EncryptionService } from '../encryption/service.js';
 import { SupabaseService } from './service.js';
+import crypto from 'crypto';
 
 export function createMessageMetadata(purpose?: MessagePurpose): Message['public']['content']['metadata'] {
   return {
@@ -52,7 +54,7 @@ export async function createMessage(
   privateContent: Record<string, any> = {},
   parentMessageId?: string,
   conversationId?: string
-): Promise<Message> {
+): Promise<MessageCreate> {
   const encryptionService = new EncryptionService();
   const supabaseService = SupabaseService.getInstance();
   
@@ -74,6 +76,9 @@ export async function createMessage(
     senderPrivateKey
   );
 
+  // Generate a new conversation ID if none is provided
+  const finalConversationId = conversationId || crypto.randomUUID();
+
   return {
     sender_agent_id: senderId,
     recipient_agent_id: recipientId,
@@ -83,7 +88,7 @@ export async function createMessage(
       encryptedKeys
     },
     parent_message_id: parentMessageId,
-    conversation_id: conversationId
+    conversation_id: finalConversationId
   };
 }
 
@@ -96,7 +101,7 @@ export async function createPaymentNotificationMessage(
   serviceName: string,
   transactionId: string,
   privacySettings?: ServicePrivacySettings
-): Promise<Message> {
+): Promise<MessageCreate> {
   // Create base content
   const baseContent = {
     type: TRANSACTION_TYPES.PAYMENT_NOTIFICATION,
@@ -152,7 +157,7 @@ export async function createServiceDeliveryMessage(
   privacySettings: ServicePrivacySettings,
   parentMessageId?: string,
   conversationId?: string
-): Promise<Message> {
+): Promise<MessageCreate> {
   // Create base content that is always public
   const publicData: {
     type: typeof TRANSACTION_TYPES.SERVICE_DELIVERY;
