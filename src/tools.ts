@@ -351,10 +351,7 @@ export class ToolHandler {
         service.privacy_settings
       );
 
-      await this.supabaseService.sendMessage(message);
-
-      // Check if payment is private based on service privacy settings
-      const isPrivatePayment = service.privacy_settings?.paymentPrivacy === SERVICE_PRIVACY_LEVELS.PRIVATE;
+      const sentMessage = await this.supabaseService.sendMessage(message);
 
       return {
         content: [
@@ -364,8 +361,9 @@ export class ToolHandler {
               status: 'success',
               message: 'Payment notification sent successfully',
               serviceId,
-              amount: isPrivatePayment ? '[PRIVATE]' : amount,
-              transactionId
+              amount,
+              transactionId,
+              paymentMessageId: sentMessage.id
             }, null, 2),
             mimeType: 'application/json'
           }
