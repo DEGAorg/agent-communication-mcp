@@ -491,10 +491,10 @@ export class ToolHandler {
       }
 
       // Verify the agent is the recipient of the payment
-      if (paymentMessage.recipient_agent_id !== agentId) {
+      if (paymentMessage.sender_agent_id !== agentId) {
         throw new McpError(
           ErrorCode.InvalidRequest,
-          'Only the payment recipient can query service delivery status'
+          'Only the payment sender can query service delivery status'
         );
       }
 
