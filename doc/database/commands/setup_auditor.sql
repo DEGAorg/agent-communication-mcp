@@ -20,8 +20,10 @@ CREATE POLICY auditor_readonly_policy ON agents
   FOR SELECT USING (true);  -- Allow reading auditor info by anyone
 
 -- Create policy to prevent auditor modification
+DROP POLICY IF EXISTS auditor_no_modify_policy ON agents;
 CREATE POLICY auditor_no_modify_policy ON agents
   FOR UPDATE USING (id != '00000000-0000-0000-0000-000000000000');
 
+DROP POLICY IF EXISTS auditor_no_delete_policy ON agents;
 CREATE POLICY auditor_no_delete_policy ON agents
   FOR DELETE USING (id != '00000000-0000-0000-0000-000000000000'); 
