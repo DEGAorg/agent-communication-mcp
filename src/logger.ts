@@ -1,6 +1,16 @@
 import { pino } from 'pino';
 import { config } from './config.js';
 
+interface ErrorObject {
+  message: string;
+  stack?: string;
+  code?: string | number;
+  type?: string;
+  details?: string;
+  context?: Record<string, unknown>;
+  cause?: unknown;
+}
+
 const transport = config.logFile
   ? {
       targets: [
@@ -8,8 +18,13 @@ const transport = config.logFile
           target: 'pino-pretty',
           options: {
             colorize: true,
-            translateTime: 'SYS:standard',
+            translateTime: 'HH:MM:ss',
             ignore: 'pid,hostname',
+            messageFormat: '{msg}',
+            errorLikeObjectKeys: ['err', 'error'],
+            errorProps: 'message,stack,code,type,details,context',
+            singleLine: true,
+            messageKey: 'msg'
           },
         },
         {
@@ -25,8 +40,13 @@ const transport = config.logFile
       target: 'pino-pretty',
       options: {
         colorize: true,
-        translateTime: 'SYS:standard',
+        translateTime: 'HH:MM:ss',
         ignore: 'pid,hostname',
+        messageFormat: '{msg}',
+        errorLikeObjectKeys: ['err', 'error'],
+        errorProps: 'message,stack,code,type,details,context',
+        singleLine: true,
+        messageKey: 'msg'
       },
     };
 
@@ -35,7 +55,25 @@ export const logger = pino({
   transport,
   serializers: {
     err: (err) => {
-      return typeof err === 'object' ? JSON.stringify(err, null, 2) : String(err);
+      if (!err) return err;
+      const errorObj: ErrorObject = {
+        message: err.message || 'Unknown error',
+        stack: err.stack,
+        code: err.code,
+        type: err.type,
+      };
+
+      if (err.details) {
+        errorObj.details = err.details;
+      }
+      if (err.context) {
+        errorObj.context = err.context;
+      }
+      if (err.cause) {
+        errorObj.cause = err.cause;
+      }
+
+      return errorObj;
     }
   }
 }); 

@@ -163,7 +163,15 @@ export class ToolHandler {
           );
       }
     } catch (error) {
-      logger.error({ err: error }, `Error handling tool call for ${toolName}`);
+      logger.error({
+        msg: `Error handling tool call for ${toolName}`,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          toolName,
+          args: JSON.stringify(toolArgs)
+        }
+      });
       
       // If it's a system not ready error, provide more specific error code
       if (error instanceof Error && error.message.includes('System not ready')) {
@@ -206,7 +214,18 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error({ err: error }, 'Error listing services');
+      const context = {
+        agentId: this.authService.getCurrentUserId() || 'unknown',
+        filters: args
+      };
+      
+      logger.error({
+        msg: 'Error listing services',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context
+      });
+      
       if (error instanceof McpError) {
         throw error;
       }
@@ -218,13 +237,14 @@ export class ToolHandler {
   }
 
   private async handleRegisterService(args: Omit<Service, 'id' | 'agent_id'>) {
+    let agentId: string | null = null;
     try {
-      logger.info('Validating service data:', args);
+      logger.info('Validating service data');
       // Validate the service data
       validateService(args);
 
       // Get the current user ID from the auth service
-      const agentId = this.authService.getCurrentUserId();
+      agentId = this.authService.getCurrentUserId();
       if (!agentId) {
         throw new McpError(
           ErrorCode.InvalidParams,
@@ -232,13 +252,13 @@ export class ToolHandler {
         );
       }
 
-      logger.info('Registering service with agent ID:', agentId);
+      logger.info(`Registering service with agent ID: ${agentId}`);
       const service = await this.supabaseService.registerService({
         agent_id: agentId,
         ...args
       });
 
-      logger.info('Service registered successfully:', service);
+      logger.info(`Service registered successfully: ${service.name}`);
       return {
         content: [
           {
@@ -249,7 +269,16 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error({ err: error }, 'Error registering service');
+      logger.error({
+        msg: 'Error registering service',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          agentId: agentId || 'unknown',
+          serviceData: JSON.stringify(args),
+          timestamp: new Date().toISOString()
+        }
+      });
       if (error instanceof McpError) {
         throw error;
       }
@@ -304,6 +333,7 @@ export class ToolHandler {
         tags
       });
 
+      logger.info(`Service content stored successfully for service: ${service.name}`);
       return {
         content: [
           {
@@ -318,7 +348,17 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error('Error storing service content:', error);
+      logger.error({
+        msg: 'Error storing service content',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          serviceId,
+          version,
+          contentLength: content.length,
+          timestamp: new Date().toISOString()
+        }
+      });
       if (error instanceof McpError) {
         throw error;
       }
@@ -370,6 +410,7 @@ export class ToolHandler {
 
       const sentMessage = await this.supabaseService.sendMessage(message);
 
+      logger.info(`Payment notification sent successfully for service: ${service.name}`);
       return {
         content: [
           {
@@ -387,13 +428,23 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error('Error handling service payment:', error);
+      logger.error({
+        msg: 'Error handling service payment',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          serviceId: args.serviceId,
+          transactionId: args.transactionId,
+          amount: args.amount,
+          timestamp: new Date().toISOString()
+        }
+      });
       if (error instanceof McpError) {
         throw error;
       }
       throw new McpError(
         ErrorCode.InternalError,
-        `Failed to process service payment: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to handle service payment: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -522,7 +573,15 @@ export class ToolHandler {
           ]
         };
       } catch (error) {
-        logger.error('Error decrypting delivery message:', error);
+        logger.error({
+          msg: 'Error decrypting delivery message',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            serviceId,
+            version: deliveryMessage.public.content.data.version
+          }
+        });
         return {
           content: [
             {
@@ -539,7 +598,15 @@ export class ToolHandler {
         };
       }
     } catch (error) {
-      logger.error('Error querying service delivery:', error);
+      logger.error({
+        msg: 'Error querying service delivery',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          serviceId: args.serviceId,
+          paymentMessageId: args.paymentMessageId
+        }
+      });
       if (error instanceof McpError) {
         throw error;
       }

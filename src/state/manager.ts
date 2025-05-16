@@ -101,9 +101,24 @@ export class StateManager {
   }
 
   private setState(newState: SystemState, error: Error | null = null) {
+    const previousState = this.currentState;
     this.currentState = newState;
     this.error = error;
-    logger.info(`System state changed to: ${newState}`);
+    
+    if (error) {
+      logger.error({
+        msg: 'System state changed with error',
+        error: error.message,
+        details: error.stack,
+        context: {
+          previousState,
+          newState,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } else {
+      logger.info(`System state changed: ${previousState} -> ${newState}`);
+    }
   }
 
   private async processUnreadMessages(): Promise<void> {
@@ -124,7 +139,15 @@ export class StateManager {
           try {
             await this.messageHandler.handleMessage(message);
           } catch (error) {
-            logger.error(`Error processing unread message ${message.id}:`, error);
+            logger.error({
+              msg: `Error processing unread message ${message.id}`,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              details: error instanceof Error ? error.stack : String(error),
+              context: {
+                messageId: message.id,
+                timestamp: new Date().toISOString()
+              }
+            });
             // Continue processing other messages even if one fails
           }
         }
@@ -132,7 +155,16 @@ export class StateManager {
         logger.info('Finished processing unread messages');
       }
     } catch (error) {
-      logger.error('Error processing unread messages:', error);
+      logger.error({
+        msg: 'Error processing unread messages',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'unread_messages',
+          state: this.currentState,
+          timestamp: new Date().toISOString()
+        }
+      });
       throw error;
     }
   }
@@ -145,13 +177,14 @@ export class StateManager {
         await this.supabaseService.initialize();
         this.setState(SystemState.CONNECTED);
       } catch (error) {
-        logger.error('Failed to connect to Supabase:', {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          state: this.currentState
+        logger.error({
+          msg: 'Failed to connect to Supabase',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
         });
         throw error;
       }
@@ -160,13 +193,14 @@ export class StateManager {
       try {
         await this.authService.initialize();
       } catch (error) {
-        logger.error('Failed to initialize auth service:', {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          state: this.currentState
+        logger.error({
+          msg: 'Failed to initialize auth service',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
         });
         throw error;
       }
@@ -208,13 +242,15 @@ export class StateManager {
       try {
         await this.supabaseService.setupRealtimeSubscriptions();
       } catch (error) {
-        logger.error('Failed to setup realtime subscriptions:', {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          state: this.currentState
+        logger.error({
+          msg: 'Failed to setup realtime subscriptions',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            operation: 'realtime_setup',
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
         });
         throw error;
       }
@@ -223,13 +259,15 @@ export class StateManager {
       try {
         await this.processUnreadMessages();
       } catch (error) {
-        logger.error('Failed to process unread messages:', {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          state: this.currentState
+        logger.error({
+          msg: 'Failed to process unread messages',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            operation: 'unread_messages',
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
         });
         // Don't throw here - we want to continue initialization even if message processing fails
       }
@@ -253,18 +291,18 @@ export class StateManager {
       this.setState(SystemState.READY);
       logger.info('All services initialized successfully');
     } catch (error) {
-      const errorDetails = error instanceof Error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      } : error;
-      
-      logger.error('Failed to initialize system:', {
-        error: errorDetails,
-        state: this.currentState,
-        hasAuth: !!this.authService,
-        hasSupabase: !!this.supabaseService,
-        hasEncryption: !!this.encryptionService
+      logger.error({
+        msg: 'Failed to initialize system',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'system_initialization',
+          state: this.currentState,
+          hasAuth: !!this.authService,
+          hasSupabase: !!this.supabaseService,
+          hasEncryption: !!this.encryptionService,
+          timestamp: new Date().toISOString()
+        }
       });
       
       this.setState(SystemState.ERROR, error instanceof Error ? error : new Error(String(error)));
@@ -320,11 +358,20 @@ export class StateManager {
 
   async attemptRecovery(): Promise<void> {
     if (this.currentState === SystemState.ERROR) {
-      logger.info('Attempting to recover from error state...');
+      logger.info('Attempting to recover from error state');
       try {
         await this.initialize();
       } catch (error) {
-        logger.error('Recovery failed:', error);
+        logger.error({
+          msg: 'Recovery failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            operation: 'system_recovery',
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
+        });
         throw error;
       }
     }
