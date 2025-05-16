@@ -2,6 +2,7 @@ import { logger } from '../logger.js';
 import { x25519 } from '@noble/curves/ed25519';
 import { randomBytes } from '@noble/hashes/utils';
 import { createCipheriv, createDecipheriv } from 'crypto';
+import { supabase } from '../supabase/config.js';
 
 export class EncryptionService {
   private readonly publicKey: Uint8Array;
@@ -128,7 +129,6 @@ export class EncryptionService {
   async encryptMessageForRecipients(
     message: string,
     recipientPublicKey: Uint8Array,
-    auditorPublicKey: Uint8Array,
     senderPrivateKey: Uint8Array
   ): Promise<{
     encryptedMessage: { nonce: string; ciphertext: string; tag: string };
@@ -140,6 +140,9 @@ export class EncryptionService {
     // Encrypt the message with AES
     const encryptedMessage = this.encryptAES(message, aesKey);
     
+    // Get auditor's public key from database
+    const auditorPublicKey = await this.getAuditorPublicKey();
+    
     // Encrypt the AES key for each recipient
     const encryptedKeys = {
       recipient: this.encryptKey(aesKey, recipientPublicKey, senderPrivateKey),
@@ -150,6 +153,22 @@ export class EncryptionService {
       encryptedMessage,
       encryptedKeys
     };
+  }
+
+  // Get auditor's public key from database
+  private async getAuditorPublicKey(): Promise<Uint8Array> {
+    const auditorId = '00000000-0000-0000-0000-000000000000';
+    const { data: auditor } = await supabase
+      .from('agent_public_keys')
+      .select('public_key')
+      .eq('id', auditorId)
+      .single();
+
+    if (!auditor) {
+      throw new Error('Auditor public key not found in database');
+    }
+
+    return Buffer.from(auditor.public_key, 'base64');
   }
 
   // Decrypt message using own private key and sender's public key
