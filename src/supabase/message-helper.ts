@@ -9,8 +9,11 @@ import {
   MESSAGE_PURPOSE,
   MessagePurpose,
   ServicePrivacySettings,
+  MessageCreate
 } from './message-types.js';
 import { EncryptionService } from '../encryption/service.js';
+import { SupabaseService } from './service.js';
+import crypto from 'crypto';
 
 export function createMessageMetadata(purpose?: MessagePurpose): Message['public']['content']['metadata'] {
   return {
@@ -48,21 +51,32 @@ export async function createMessage(
   senderId: string,
   recipientId: string,
   publicContent: MessagePublic,
-  privateContent: Record<string, any> = {}
-): Promise<Message> {
+  privateContent: Record<string, any> = {},
+  parentMessageId?: string,
+  conversationId?: string
+): Promise<MessageCreate> {
   const encryptionService = new EncryptionService();
+  const supabaseService = SupabaseService.getInstance();
   
   // Get the sender's private key and recipient's public key
   const senderPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-  const recipientPublicKey = Buffer.from(process.env.AGENT_PUBLIC_KEY!, 'base64');
+  
+  // Get recipient's public key from database
+  const recipientPublicKeyBase64 = await supabaseService.getAgentPublicKey(recipientId);
+  if (!recipientPublicKeyBase64) {
+    throw new Error(`Recipient agent ${recipientId} not found or has no public key`);
+  }
+  const recipientPublicKey = Buffer.from(recipientPublicKeyBase64, 'base64');
   
   // Encrypt the private content
   const { encryptedMessage, encryptedKeys } = await encryptionService.encryptMessageForRecipients(
     JSON.stringify(privateContent),
     recipientPublicKey,
-    recipientPublicKey, // For now, we're using the same key for auditor
     senderPrivateKey
   );
+
+  // Generate a new conversation ID if none is provided
+  const finalConversationId = conversationId || crypto.randomUUID();
 
   return {
     sender_agent_id: senderId,
@@ -71,7 +85,9 @@ export async function createMessage(
     private: {
       encryptedMessage,
       encryptedKeys
-    }
+    },
+    parent_message_id: parentMessageId,
+    conversation_id: finalConversationId
   };
 }
 
@@ -82,15 +98,17 @@ export async function createPaymentNotificationMessage(
   serviceId: string,
   amount: string,
   serviceName: string,
+  transactionId: string,
   privacySettings?: ServicePrivacySettings
-): Promise<Message> {
+): Promise<MessageCreate> {
   // Create base content
   const baseContent = {
     type: TRANSACTION_TYPES.PAYMENT_NOTIFICATION,
     amount,
     status: MESSAGE_STATUS.PENDING,
     service_name: serviceName,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    transaction_id: transactionId
   };
 
   // Determine what goes in public vs private based on privacy settings
@@ -99,7 +117,8 @@ export async function createPaymentNotificationMessage(
     // Always public
     status: baseContent.status,
     service_name: baseContent.service_name,
-    timestamp: baseContent.timestamp
+    timestamp: baseContent.timestamp,
+    transaction_id: baseContent.transaction_id
   };
 
   const privateData = {
@@ -134,8 +153,10 @@ export async function createServiceDeliveryMessage(
   serviceContent: any,
   version: string,
   serviceName: string,
-  privacySettings: ServicePrivacySettings
-): Promise<Message> {
+  privacySettings: ServicePrivacySettings,
+  parentMessageId?: string,
+  conversationId?: string
+): Promise<MessageCreate> {
   // Create base content that is always public
   const publicData: {
     type: typeof TRANSACTION_TYPES.SERVICE_DELIVERY;
@@ -197,5 +218,12 @@ export async function createServiceDeliveryMessage(
   // Only include private content if there's something to encrypt
   const privateContent = Object.keys(privateData).length > 0 ? privateData : {};
 
-  return await createMessage(senderId, recipientId, publicContent, privateContent);
+  return await createMessage(
+    senderId,
+    recipientId,
+    publicContent,
+    privateContent,
+    parentMessageId,
+    conversationId
+  );
 } 

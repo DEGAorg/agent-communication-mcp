@@ -89,7 +89,15 @@ export async function createServer() {
  * Helper function to handle errors uniformly
  */
 function handleError(context: string, error: unknown): never {
-  logger.error(`Error ${context}:`, error);
+  logger.error({
+    msg: `Error ${context}`,
+    error: error instanceof Error ? error.message : 'Unknown error',
+    details: error instanceof Error ? error.stack : String(error),
+    context: {
+      operation: context,
+      timestamp: new Date().toISOString()
+    }
+  });
 
   if (error instanceof McpError) {
     throw error;
@@ -168,17 +176,17 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
  * Set up process exit signal handlers
  */
 function setupExitHandlers(server: any) {
-  const exitHandler = async () => {
-    logger.info('Shutting down server...');
+  const exitHandler = async (signal?: string) => {
+    logger.info(`Shutting down server (${signal})`);
     await server.stop();
     process.exit(0);
   };
 
   // Handle various exit signals
-  process.on('SIGINT', exitHandler);
-  process.on('SIGTERM', exitHandler);
-  process.on('SIGUSR1', exitHandler);
-  process.on('SIGUSR2', exitHandler);
+  process.on('SIGINT', () => exitHandler('SIGINT'));
+  process.on('SIGTERM', () => exitHandler('SIGTERM'));
+  process.on('SIGUSR1', () => exitHandler('SIGUSR1'));
+  process.on('SIGUSR2', () => exitHandler('SIGUSR2'));
 }
 
 /**
@@ -196,7 +204,15 @@ async function main() {
     // Handle process exit signals
     setupExitHandlers(server);
   } catch (error) {
-    logger.error('Failed to start server:', error);
+    logger.error({
+      msg: 'Failed to start server',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      details: error instanceof Error ? error.stack : String(error),
+      context: {
+        operation: 'server_startup',
+        timestamp: new Date().toISOString()
+      }
+    });
     process.exit(1);
   }
 }
@@ -204,7 +220,15 @@ async function main() {
 // Run the main function if this file is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => {
-    logger.error('Fatal error:', error);
+    logger.error({
+      msg: 'Fatal error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      details: error instanceof Error ? error.stack : String(error),
+      context: {
+        operation: 'main_execution',
+        timestamp: new Date().toISOString()
+      }
+    });
     process.exit(1);
   });
 } 

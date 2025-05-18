@@ -10,21 +10,40 @@ import { createPaymentNotificationMessage, createMessageContent, createMessagePu
 import { ServiceContentStorage } from './storage/service-content.js';
 import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS } from './supabase/message-types.js';
 import { createServiceDeliveryMessage } from './supabase/message-helper.js';
+import { ReceivedContentStorage } from './storage/received-content.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
   {
     name: 'listServices',
-    description: 'List all available services',
+    description: 'Retrieve a list of available services in the marketplace with optional filtering by topics or interests. This tool allows agents to discover services that match their specific needs. You can filter services by topics, price range, or service type. Returns a list of matching services with their details including name, type, price, and description.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        topics: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional list of topics to filter services by'
+        },
+        minPrice: {
+          type: 'number',
+          description: 'Optional minimum price filter'
+        },
+        maxPrice: {
+          type: 'number',
+          description: 'Optional maximum price filter'
+        },
+        serviceType: {
+          type: 'string',
+          description: 'Optional service type filter'
+        }
+      },
       required: []
     }
   },
   {
     name: 'registerService',
-    description: 'Register a new service',
+    description: 'Register a new service that your agent will provide to other agents. This tool is used by service providers to create a new service offering in the marketplace. You must specify the service details including name, type, price, description, and privacy settings. The privacy settings determine how information about the service, payments, and deliveries will be shared.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -56,7 +75,7 @@ export const ALL_TOOLS = [
   },
   {
     name: 'storeServiceContent',
-    description: 'Store content for a service that will be delivered to customers',
+    description: 'Store the content that will be delivered to customers when they purchase your service. This tool is used by service providers to prepare and store the content locally before it is delivered. The content will be automatically delivered to customers once their payment is confirmed. You must specify the service ID, the content to be delivered, and a version number. Optional tags can be added for better organization.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -73,44 +92,27 @@ export const ALL_TOOLS = [
   },
   {
     name: 'servicePayment',
-    description: 'Handle service payment',
+    description: 'Initiate a service purchase or hiring by sending a payment notification. This tool is used by agents who want to purchase or hire a service from another agent. You must provide the service ID, payment amount, and the Midnight blockchain transaction ID that proves the payment. This will trigger the service delivery process once the payment is confirmed.',
     inputSchema: {
       type: 'object',
       properties: {
         serviceId: { type: 'string' },
-        amount: { type: 'string' }
+        amount: { type: 'string' },
+        transactionId: { type: 'string', description: 'The Midnight blockchain transaction identifier' }
       },
-      required: ['serviceId', 'amount']
+      required: ['serviceId', 'amount', 'transactionId']
     }
   },
   {
-    name: 'serviceDelivery',
-    description: 'Deliver service data',
+    name: 'queryServiceDelivery',
+    description: 'Check the status and retrieve the content of a service delivery. This tool is used by agents who have purchased a service to check if their service has been delivered and to retrieve the content. You must provide the payment message ID and service ID to track the delivery status.',
     inputSchema: {
       type: 'object',
       properties: {
-        serviceId: { type: 'string' },
-        data: { type: 'object' },
-        privacyPreferences: {
-          type: 'object',
-          properties: {
-            deliveryPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] }
-          },
-          required: ['deliveryPrivacy']
-        }
+        paymentMessageId: { type: 'string', description: 'The ID of the payment message' },
+        serviceId: { type: 'string', description: 'The ID of the service' }
       },
-      required: ['serviceId', 'data', 'privacyPreferences']
-    }
-  },
-  {
-    name: 'revealData',
-    description: 'Reveal encrypted data',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        messageId: { type: 'string' }
-      },
-      required: ['messageId']
+      required: ['paymentMessageId', 'serviceId']
     }
   }
 ];
@@ -140,7 +142,7 @@ export class ToolHandler {
 
       switch (toolName) {
         case 'listServices':
-          return await this.handleListServices();
+          return await this.handleListServices(toolArgs);
         
         case 'registerService':
           return await this.handleRegisterService(toolArgs);
@@ -151,11 +153,8 @@ export class ToolHandler {
         case 'servicePayment':
           return await this.handleServicePayment(toolArgs);
         
-        case 'serviceDelivery':
-          return await this.handleServiceDelivery(toolArgs);
-        
-        case 'revealData':
-          return await this.handleRevealData(toolArgs);
+        case 'queryServiceDelivery':
+          return await this.handleQueryServiceDelivery(toolArgs);
         
         default:
           throw new McpError(
@@ -164,7 +163,15 @@ export class ToolHandler {
           );
       }
     } catch (error) {
-      logger.error(`Error handling tool call for ${toolName}:`, error);
+      logger.error({
+        msg: `Error handling tool call for ${toolName}`,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          toolName,
+          args: JSON.stringify(toolArgs)
+        }
+      });
       
       // If it's a system not ready error, provide more specific error code
       if (error instanceof Error && error.message.includes('System not ready')) {
@@ -184,27 +191,60 @@ export class ToolHandler {
     }
   }
 
-  private async handleListServices() {
-    const services = await this.supabaseService.listServices();
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(services, null, 2),
-          mimeType: 'application/json'
-        }
-      ]
-    };
+  private async handleListServices(args: { 
+    topics?: string[]; 
+    minPrice?: number; 
+    maxPrice?: number; 
+    serviceType?: string; 
+  } = {}) {
+    try {
+      const services = await this.supabaseService.listServices(args);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              total: services.length,
+              services,
+              filters: args
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      const context = {
+        agentId: this.authService.getCurrentUserId() || 'unknown',
+        filters: args
+      };
+      
+      logger.error({
+        msg: 'Error listing services',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context
+      });
+      
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to list services: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   private async handleRegisterService(args: Omit<Service, 'id' | 'agent_id'>) {
+    let agentId: string | null = null;
     try {
-      logger.info('Validating service data:', args);
+      logger.info('Validating service data');
       // Validate the service data
       validateService(args);
 
       // Get the current user ID from the auth service
-      const agentId = this.authService.getCurrentUserId();
+      agentId = this.authService.getCurrentUserId();
       if (!agentId) {
         throw new McpError(
           ErrorCode.InvalidParams,
@@ -212,13 +252,13 @@ export class ToolHandler {
         );
       }
 
-      logger.info('Registering service with agent ID:', agentId);
+      logger.info(`Registering service with agent ID: ${agentId}`);
       const service = await this.supabaseService.registerService({
         agent_id: agentId,
         ...args
       });
 
-      logger.info('Service registered successfully:', service);
+      logger.info(`Service registered successfully: ${service.name}`);
       return {
         content: [
           {
@@ -229,7 +269,16 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error('Error registering service:', error);
+      logger.error({
+        msg: 'Error registering service',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          agentId: agentId || 'unknown',
+          serviceData: JSON.stringify(args),
+          timestamp: new Date().toISOString()
+        }
+      });
       if (error instanceof McpError) {
         throw error;
       }
@@ -284,6 +333,7 @@ export class ToolHandler {
         tags
       });
 
+      logger.info(`Service content stored successfully for service: ${service.name}`);
       return {
         content: [
           {
@@ -298,7 +348,17 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error('Error storing service content:', error);
+      logger.error({
+        msg: 'Error storing service content',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          serviceId,
+          version,
+          contentLength: content.length,
+          timestamp: new Date().toISOString()
+        }
+      });
       if (error instanceof McpError) {
         throw error;
       }
@@ -309,12 +369,12 @@ export class ToolHandler {
     }
   }
 
-  private async handleServicePayment(args: { serviceId: string; amount: string }) {
-    const { serviceId, amount } = args;
-    if (!serviceId || !amount) {
+  private async handleServicePayment(args: { serviceId: string; amount: string; transactionId: string }) {
+    const { serviceId, amount, transactionId } = args;
+    if (!serviceId || !amount || !transactionId) {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'Missing required parameters: serviceId and amount'
+        'Missing required parameters: serviceId, amount, and transactionId'
       );
     }
 
@@ -344,14 +404,13 @@ export class ToolHandler {
         serviceId,
         amount,
         service.name,
+        transactionId,
         service.privacy_settings
       );
 
-      await this.supabaseService.sendMessage(message);
+      const sentMessage = await this.supabaseService.sendMessage(message);
 
-      // Check if payment is private based on service privacy settings
-      const isPrivatePayment = service.privacy_settings?.paymentPrivacy === SERVICE_PRIVACY_LEVELS.PRIVATE;
-
+      logger.info(`Payment notification sent successfully for service: ${service.name}`);
       return {
         content: [
           {
@@ -360,30 +419,42 @@ export class ToolHandler {
               status: 'success',
               message: 'Payment notification sent successfully',
               serviceId,
-              amount: isPrivatePayment ? '[PRIVATE]' : amount
+              amount,
+              transactionId,
+              paymentMessageId: sentMessage.id
             }, null, 2),
             mimeType: 'application/json'
           }
         ]
       };
     } catch (error) {
-      logger.error('Error handling service payment:', error);
+      logger.error({
+        msg: 'Error handling service payment',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          serviceId: args.serviceId,
+          transactionId: args.transactionId,
+          amount: args.amount,
+          timestamp: new Date().toISOString()
+        }
+      });
       if (error instanceof McpError) {
         throw error;
       }
       throw new McpError(
         ErrorCode.InternalError,
-        `Failed to process service payment: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to handle service payment: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
 
-  private async handleServiceDelivery(args: { serviceId: string; data: any; privacyPreferences?: ClientPrivacyPreferences }) {
-    const { serviceId, data, privacyPreferences } = args;
-    if (!serviceId || !data) {
+  private async handleQueryServiceDelivery(args: { paymentMessageId: string; serviceId: string }) {
+    const { paymentMessageId, serviceId } = args;
+    if (!paymentMessageId || !serviceId) {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'Missing required parameters: serviceId and data'
+        'Missing required parameters: paymentMessageId and serviceId'
       );
     }
 
@@ -397,77 +468,153 @@ export class ToolHandler {
         );
       }
 
-      // Get service details to find the service provider
-      const service = await this.supabaseService.getServiceById(serviceId);
-      if (!service) {
+      // Get the payment message to verify ownership
+      const paymentMessage = await this.supabaseService.getMessageById(paymentMessageId);
+      if (!paymentMessage) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          `Service with ID ${serviceId} not found`
+          `Payment message ${paymentMessageId} not found`
         );
       }
 
-      // Get the stored service content
-      const serviceContentStorage = ServiceContentStorage.getInstance();
-      const serviceContent = await serviceContentStorage.getContent(serviceId);
+      // Verify the agent is the recipient of the payment
+      if (paymentMessage.sender_agent_id !== agentId) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          'Only the payment sender can query service delivery status'
+        );
+      }
+
+      // First check received content storage
+      const receivedContentStorage = ReceivedContentStorage.getInstance();
+      const receivedContent = await receivedContentStorage.getContent(serviceId, paymentMessageId);
       
-      if (!serviceContent) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `No content found for service ${serviceId}`
-        );
+      if (receivedContent) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'completed',
+                message: 'Service content retrieved from local storage',
+                serviceId,
+                version: receivedContent.version,
+                content: receivedContent.content,
+                tags: receivedContent.tags,
+                created_at: receivedContent.created_at,
+                updated_at: receivedContent.updated_at
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
       }
 
-      // Create and send the delivery message
-      const message = await createServiceDeliveryMessage(
-        service.agent_id, // sender is the service provider
-        agentId, // recipient is the current agent
-        serviceId,
-        serviceContent.content,
-        serviceContent.version,
-        service.name,
-        service.privacy_settings
-      );
+      // If not found locally, check for delivery message
+      const deliveryMessage = await this.supabaseService.getMessageByParentId(paymentMessageId);
+      
+      if (!deliveryMessage) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'pending',
+                message: 'Service delivery not yet completed',
+                serviceId,
+                paymentMessageId
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      }
 
-      await this.supabaseService.sendMessage(message);
+      // If we have a delivery message but no local content, decrypt and store it
+      try {
+        const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
+        const senderPublicKeyBase64 = await this.supabaseService.getAgentPublicKey(deliveryMessage.sender_agent_id);
+        if (!senderPublicKeyBase64) {
+          throw new Error(`Sender agent ${deliveryMessage.sender_agent_id} not found or has no public key`);
+        }
+        const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
+        
+        const decryptedContent = JSON.parse(
+          await this.encryptionService.decryptMessage(
+            deliveryMessage.private.encryptedMessage,
+            deliveryMessage.private.encryptedKeys.recipient,
+            senderPublicKey,
+            recipientPrivateKey
+          )
+        );
+        
+        // Store the decrypted content
+        await receivedContentStorage.storeContent({
+          payment_message_id: paymentMessageId,
+          service_id: serviceId,
+          content: decryptedContent,
+          version: deliveryMessage.public.content.data.version,
+          tags: ['received', 'decrypted']
+        });
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              status: 'success',
-              message: 'Service content delivered successfully',
-              serviceId,
-              version: serviceContent.version,
-              privacy: service.privacy_settings.deliveryPrivacy
-            }, null, 2),
-            mimeType: 'application/json'
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'completed',
+                message: 'Service content decrypted and stored',
+                serviceId,
+                version: deliveryMessage.public.content.data.version,
+                content: decryptedContent
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      } catch (error) {
+        logger.error({
+          msg: 'Error decrypting delivery message',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            serviceId,
+            version: deliveryMessage.public.content.data.version
           }
-        ]
-      };
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'error',
+                message: 'Failed to decrypt delivery message',
+                serviceId,
+                deliveryMessageId: deliveryMessage.id
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      }
     } catch (error) {
-      logger.error('Error handling service delivery:', error);
+      logger.error({
+        msg: 'Error querying service delivery',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          serviceId: args.serviceId,
+          paymentMessageId: args.paymentMessageId
+        }
+      });
       if (error instanceof McpError) {
         throw error;
       }
       throw new McpError(
         ErrorCode.InternalError,
-        `Failed to deliver service content: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to query service delivery: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-  }
-
-  private async handleRevealData(args: { messageId: string }) {
-    const { messageId } = args;
-    if (!messageId) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'Missing required parameter: messageId'
-      );
-    }
-
-    // TODO: Implement data revelation logic
-    throw new Error('Not implemented: Data revelation');
   }
 
   async cleanup() {

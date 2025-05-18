@@ -1,8 +1,10 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { supabase, TABLES, Agent, Service, Message } from './config.js';
+import { supabase, TABLES, Agent, Service, Message, MessageCreate } from './config.js';
 import { logger } from '../logger.js';
 import { MessageHandler } from './message-handler.js';
 import { AuthService } from './auth.js';
+import { createClient } from '@supabase/supabase-js';
+import { TRANSACTION_TYPES } from './message-types.js';
 
 export class SupabaseService {
   private static instance: SupabaseService;
@@ -22,6 +24,13 @@ export class SupabaseService {
       SupabaseService.instance = new SupabaseService();
     }
     return SupabaseService.instance;
+  }
+
+  /**
+   * Get the Supabase client instance
+   */
+  getSupabaseClient() {
+    return supabase;
   }
 
   setAuthService(authService: AuthService) {
@@ -53,33 +62,37 @@ export class SupabaseService {
       }
 
       // Test connection
-      logger.info('Testing Supabase connection...');
+      logger.info('Testing Supabase connection');
+      
       const { data, error } = await supabase.from('agents').select('count').limit(1);
       
       if (error) {
-        logger.error('Supabase connection test failed:', {
+        logger.error({
+          msg: 'Supabase connection test failed',
           error: error.message,
-          code: error.code,
           details: error.details,
-          hint: error.hint
+          context: {
+            operation: 'connection_test',
+            code: error.code,
+            hint: error.hint,
+            timestamp: new Date().toISOString()
+          }
         });
         throw error;
       }
 
-      logger.info('Supabase connection test successful', {
-        data,
-        hasAuth: !!this.authService
-      });
-
+      logger.info('Supabase connection test successful');
       logger.info('Supabase connection initialized successfully');
     } catch (error) {
-      logger.error('Failed to initialize Supabase connection:', {
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : error,
-        state: 'initialization'
+      logger.error({
+        msg: 'Failed to initialize Supabase connection',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'initialization',
+          state: 'initialization',
+          timestamp: new Date().toISOString()
+        }
       });
       throw error;
     }
@@ -100,19 +113,18 @@ export class SupabaseService {
         const timeSinceLastHeartbeat = now - this.lastHeartbeat;
         
         if (timeSinceLastHeartbeat > this.HEARTBEAT_INTERVAL * this.MAX_MISSED_HEARTBEATS) {
-          logger.warn('Realtime connection appears to be dead, attempting reconnection...', {
-            timeSinceLastHeartbeat,
-            maxAllowed: this.HEARTBEAT_INTERVAL * this.MAX_MISSED_HEARTBEATS
-          });
+          logger.warn('Realtime connection appears to be dead, attempting reconnection');
           await this.reconnectRealtime();
         }
       } catch (error) {
-        logger.error('Error in health check:', {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error
+        logger.error({
+          msg: 'Error in health check',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            operation: 'health_check',
+            timestamp: new Date().toISOString()
+          }
         });
       }
     }, this.HEARTBEAT_INTERVAL);
@@ -133,13 +145,13 @@ export class SupabaseService {
    */
   private async reconnectRealtime(): Promise<void> {
     if (this.isReconnecting) {
-      logger.info('Reconnection already in progress, skipping...');
+      logger.info('Reconnection already in progress, skipping');
       return;
     }
 
     try {
       this.isReconnecting = true;
-      logger.info('Starting realtime reconnection...');
+      logger.info('Starting realtime reconnection');
 
       // Clean up existing connection
       if (this.messageChannel) {
@@ -151,12 +163,14 @@ export class SupabaseService {
       await this.setupRealtimeSubscriptions();
       logger.info('Realtime reconnection successful');
     } catch (error) {
-      logger.error('Failed to reconnect realtime subscription:', {
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : error
+      logger.error({
+        msg: 'Failed to reconnect realtime subscription',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'realtime_reconnect',
+          timestamp: new Date().toISOString()
+        }
       });
       throw error;
     } finally {
@@ -169,7 +183,7 @@ export class SupabaseService {
    */
   async setupRealtimeSubscriptions(): Promise<void> {
     const maxRetries = 3;
-    const retryDelay = 2000; // 2 seconds
+    const retryDelay = 1000;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -186,7 +200,7 @@ export class SupabaseService {
         }
         
         this.messageChannel = supabase
-          .channel(`messages:${agentId}`)
+          .channel(`table_db_changes`)
           .on(
             'postgres_changes',
             {
@@ -198,12 +212,20 @@ export class SupabaseService {
             async (payload) => {
               logger.info('Message change received:', payload);
               try {
-                if (payload.eventType === 'INSERT') {
+                if (payload.eventType === 'INSERT' && payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
                   const message = payload.new as Message;
                   await this.messageHandler!.handleMessage(message);
                 }
               } catch (error) {
-                logger.error('Error processing message:', error);
+                logger.error({
+                  msg: 'Error processing message',
+                  error: error instanceof Error ? error.message : 'Unknown error',
+                  details: error instanceof Error ? error.stack : String(error),
+                  context: {
+                    messageId: payload.new && typeof payload.new === 'object' && 'id' in payload.new ? payload.new.id : 'unknown',
+                    timestamp: new Date().toISOString()
+                  }
+                });
               }
             }
           )
@@ -221,30 +243,29 @@ export class SupabaseService {
             }
           });
 
-        logger.info('Realtime subscriptions setup completed');
+        logger.info(`Realtime subscriptions setup completed (attempt ${attempt})`);
         return; // Success, exit the retry loop
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        logger.warn(`Failed to setup realtime subscriptions (attempt ${attempt}/${maxRetries}):`, {
-          error: lastError.message,
-          attempt,
-          maxRetries
-        });
+        logger.warn(`Failed to setup realtime subscriptions (attempt ${attempt}/${maxRetries})`);
 
         if (attempt < maxRetries) {
-          logger.info(`Retrying in ${retryDelay}ms...`);
+          logger.info(`Retrying in ${retryDelay}ms`);
           await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
     }
 
     // If we get here, all retries failed
-    logger.error('Failed to setup realtime subscriptions after all retries:', {
-      error: lastError instanceof Error ? {
-        name: lastError.name,
-        message: lastError.message,
-        stack: lastError.stack
-      } : lastError
+    logger.error({
+      msg: 'Failed to setup realtime subscriptions after all retries',
+      error: lastError instanceof Error ? lastError.message : 'Unknown error',
+      details: lastError instanceof Error ? lastError.stack : String(lastError),
+      context: {
+        operation: 'realtime_setup',
+        maxRetries,
+        timestamp: new Date().toISOString()
+      }
     });
     throw lastError;
   }
@@ -278,14 +299,89 @@ export class SupabaseService {
     return data;
   }
 
-  // Service operations
-  async listServices(): Promise<Service[]> {
+  async getAgentPublicKey(id: string): Promise<string | null> {
     const { data, error } = await supabase
-      .from(TABLES.SERVICES)
-      .select('*');
+      .from('agent_public_keys')
+      .select('public_key')
+      .eq('id', id)
+      .maybeSingle();
 
-    if (error) throw error;
-    return data || [];
+    if (error) {
+      logger.error('Error getting agent public key:', error);
+      throw error;
+    }
+    return data?.public_key || null;
+  }
+
+  // Service operations
+  async listServices(filters?: {
+    topics?: string[];
+    minPrice?: number;
+    maxPrice?: number;
+    serviceType?: string;
+  }): Promise<Service[]> {
+    try {
+      let query = supabase
+        .from(TABLES.SERVICES)
+        .select('*');
+
+      // Apply price filters
+      if (filters?.minPrice !== undefined && filters.minPrice !== null) {
+        query = query.gte('price', filters.minPrice);
+      }
+      if (filters?.maxPrice !== undefined && filters.maxPrice !== null) {
+        query = query.lte('price', filters.maxPrice);
+      }
+
+      // Apply service type filter
+      if (filters?.serviceType) {
+        query = query.eq('type', filters.serviceType);
+      }
+
+      // Apply topic filters using text search
+      if (filters?.topics && filters.topics.length > 0) {
+        // Create a text search query for each topic
+        const searchQueries = filters.topics.map(topic => {
+          const searchTerm = topic.trim();
+          return `or(name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%)`;
+        });
+
+        // Combine all search queries
+        const searchQuery = searchQueries.join(',');
+        
+        // Use the search query
+        query = query.or(searchQuery);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        logger.error({
+          msg: 'Error listing services',
+          error: error.message,
+          details: error.details,
+          context: {
+            filters,
+            code: error.code,
+            hint: error.hint
+          }
+        });
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      logger.error({
+        msg: 'Error listing services',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          filters,
+          timestamp: new Date().toISOString()
+        }
+      });
+      throw error;
+    }
   }
 
   async registerService(service: Omit<Service, 'id'>): Promise<Service> {
@@ -314,7 +410,7 @@ export class SupabaseService {
   }
 
   // Message operations
-  async sendMessage(message: Omit<Message, 'id' | 'created_at' | 'read'>): Promise<Message> {
+  async sendMessage(message: MessageCreate): Promise<Message> {
     const { data, error } = await supabase
       .from(TABLES.MESSAGES)
       .insert([{ ...message, read: false }])
@@ -336,6 +432,18 @@ export class SupabaseService {
     return data || [];
   }
 
+  async getUnreadMessages(agentId: string): Promise<Message[]> {
+    const { data, error } = await supabase
+      .from(TABLES.MESSAGES)
+      .select('*')
+      .eq('recipient_agent_id', agentId)
+      .eq('read', false)
+      .order('created_at', { ascending: true }); // Process oldest messages first
+
+    if (error) throw error;
+    return data || [];
+  }
+
   async markMessageAsRead(messageId: string): Promise<void> {
     const { error } = await supabase
       .from(TABLES.MESSAGES)
@@ -345,10 +453,51 @@ export class SupabaseService {
     if (error) throw error;
   }
 
+  async getMessageById(messageId: string): Promise<Message | null> {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('id', messageId)
+        .single();
+
+      if (error) {
+        logger.error('Error getting message by ID:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      logger.error('Error getting message by ID:', error);
+      return null;
+    }
+  }
+
+  async getMessageByParentId(parentMessageId: string): Promise<Message | null> {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('parent_message_id', parentMessageId)
+        .eq('public->content->data->type', TRANSACTION_TYPES.SERVICE_DELIVERY)
+        .single();
+
+      if (error) {
+        logger.error('Error getting message by parent ID:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      logger.error('Error getting message by parent ID:', error);
+      return null;
+    }
+  }
+
   // Cleanup
   async cleanup(): Promise<void> {
     try {
-      logger.info('Cleaning up Supabase service...');
+      logger.info('Cleaning up Supabase service');
       
       // Stop health check
       this.stopHealthCheck();
@@ -356,17 +505,19 @@ export class SupabaseService {
       // Clean up realtime subscriptions
       if (this.messageChannel) {
         try {
-          logger.info('Unsubscribing from realtime channel...');
+          logger.info('Unsubscribing from realtime channel');
           await this.messageChannel.unsubscribe();
           this.messageChannel = null;
           logger.info('Successfully unsubscribed from realtime channel');
         } catch (error) {
-          logger.error('Error unsubscribing from realtime channel:', {
-            error: error instanceof Error ? {
-              name: error.name,
-              message: error.message,
-              stack: error.stack
-            } : error
+          logger.error({
+            msg: 'Error unsubscribing from realtime channel',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            details: error instanceof Error ? error.stack : String(error),
+            context: {
+              operation: 'cleanup',
+              timestamp: new Date().toISOString()
+            }
           });
           // Don't throw here, try to continue with other cleanup
         }
@@ -378,12 +529,14 @@ export class SupabaseService {
 
       logger.info('Supabase service cleanup completed');
     } catch (error) {
-      logger.error('Error during Supabase service cleanup:', {
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : error
+      logger.error({
+        msg: 'Error during Supabase service cleanup',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'cleanup',
+          timestamp: new Date().toISOString()
+        }
       });
       throw error;
     }

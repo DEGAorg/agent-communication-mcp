@@ -1,3 +1,12 @@
+-- Create view for public keys with security
+CREATE OR REPLACE VIEW agent_public_keys
+WITH (security_barrier = true)
+AS
+SELECT id, public_key FROM agents;
+
+-- Grant access to the view
+GRANT SELECT ON agent_public_keys TO authenticated;
+
 -- Agents policies
 CREATE POLICY agents_select_policy ON agents
   FOR SELECT USING (

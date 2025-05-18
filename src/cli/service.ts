@@ -80,7 +80,7 @@ async function registerService(useTestService: boolean = false) {
     }
 
     // Initialize services
-    const supabaseService = new SupabaseService();
+    const supabaseService = SupabaseService.getInstance();
     const encryptionService = new EncryptionService();
     const toolHandler = new ToolHandler(supabaseService, encryptionService);
 

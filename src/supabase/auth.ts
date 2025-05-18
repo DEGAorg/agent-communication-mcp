@@ -195,7 +195,14 @@ export class AuthService {
 
       if (error) {
         this.isInitializing = false;
-        logger.error('Error sending OTP:', error);
+        logger.error({
+          msg: 'Error sending OTP',
+          error: error.message,
+          context: {
+            email,
+            timestamp: new Date().toISOString()
+          }
+        });
         throw error;
       }
 
@@ -203,7 +210,15 @@ export class AuthService {
       // Note: We keep isInitializing true until verifyOtp is called
     } catch (error) {
       this.isInitializing = false;
-      logger.error('Authentication failed:', error);
+      logger.error({
+        msg: 'Authentication failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          email,
+          timestamp: new Date().toISOString()
+        }
+      });
       throw error;
     }
   }
@@ -215,7 +230,17 @@ export class AuthService {
    */
   async verifyOtp(email: string, code: string): Promise<void> {
     if (!this.isInitializing) {
-      throw new Error('No OTP authentication in progress');
+      const error = new Error('No OTP authentication in progress');
+      logger.error({
+        msg: 'OTP verification failed',
+        error: error.message,
+        details: 'Attempted to verify OTP without an active authentication process',
+        context: {
+          email,
+          timestamp: new Date().toISOString()
+        }
+      });
+      throw error;
     }
 
     try {
@@ -226,7 +251,15 @@ export class AuthService {
       });
 
       if (error) {
-        logger.error('Error verifying OTP:', error);
+        logger.error({
+          msg: 'OTP verification failed',
+          error: error.message,
+          details: 'Error from Supabase auth service',
+          context: {
+            email,
+            timestamp: new Date().toISOString()
+          }
+        });
         throw error;
       }
 
@@ -234,15 +267,33 @@ export class AuthService {
         this.currentSession = session;
         // Save the new session
         await this.saveSession();
-        logger.info('Successfully authenticated!');
+        logger.info('Successfully authenticated');
 
         // Register agent after successful authentication
         await this.registerAgent();
       } else {
-        throw new Error('No session received after OTP verification');
+        const error = new Error('No session received after OTP verification');
+        logger.error({
+          msg: 'OTP verification failed',
+          error: error.message,
+          details: 'Authentication succeeded but no session was returned',
+          context: {
+            email,
+            timestamp: new Date().toISOString()
+          }
+        });
+        throw error;
       }
     } catch (error) {
-      logger.error('OTP verification failed:', error);
+      logger.error({
+        msg: 'OTP verification failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          email,
+          timestamp: new Date().toISOString()
+        }
+      });
       throw error;
     } finally {
       this.isInitializing = false;
@@ -255,7 +306,19 @@ export class AuthService {
   public async registerAgent(): Promise<void> {
     try {
       if (!this.supabaseService) {
-        throw new Error('SupabaseService not initialized');
+        const error = new Error('SupabaseService not initialized');
+        logger.error({
+          msg: 'Failed to register agent',
+          error: error.message,
+          details: 'The SupabaseService instance was not properly set before attempting to register the agent',
+          context: {
+            userId: this.currentSession?.user?.id,
+            agentName: process.env.AGENT_NAME || 'default_agent',
+            hasPublicKey: !!process.env.AGENT_PUBLIC_KEY,
+            timestamp: new Date().toISOString()
+          }
+        });
+        throw error;
       }
 
       const agentName = process.env.AGENT_NAME || 'default_agent';
@@ -263,30 +326,62 @@ export class AuthService {
       const userId = this.currentSession?.user?.id;
 
       if (!userId) {
-        throw new Error('No authenticated user found');
+        const error = new Error('No authenticated user found');
+        logger.error({
+          msg: 'Failed to register agent',
+          error: error.message,
+          details: 'The current session does not contain a valid user ID',
+          context: {
+            agentName,
+            hasPublicKey: !!publicKey,
+            timestamp: new Date().toISOString()
+          }
+        });
+        throw error;
       }
 
       if (!publicKey) {
-        throw new Error('AGENT_PUBLIC_KEY environment variable is required for agent registration');
+        const error = new Error('AGENT_PUBLIC_KEY environment variable is required for agent registration');
+        logger.error({
+          msg: 'Failed to register agent',
+          error: error.message,
+          details: 'The AGENT_PUBLIC_KEY environment variable is missing',
+          context: {
+            userId,
+            agentName,
+            timestamp: new Date().toISOString()
+          }
+        });
+        throw error;
       }
 
       // Check if agent is already registered
       const existingAgent = await this.supabaseService.getAgent(userId);
       if (existingAgent) {
-        logger.info('Agent already registered');
+        logger.info(`Agent already registered: ${agentName}`);
         return;
       }
 
       // Register new agent with the user's ID
       await this.supabaseService.registerAgent({
-        id: userId, // Use the authenticated user's ID
+        id: userId,
         name: agentName,
         public_key: publicKey
       });
 
-      logger.info('Agent registered successfully');
+      logger.info(`Agent registered successfully: ${agentName}`);
     } catch (error) {
-      logger.error('Failed to register agent:', error);
+      logger.error({
+        msg: 'Failed to register agent',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          userId: this.currentSession?.user?.id,
+          agentName: process.env.AGENT_NAME || 'default_agent',
+          hasPublicKey: !!process.env.AGENT_PUBLIC_KEY,
+          timestamp: new Date().toISOString()
+        }
+      });
       throw error;
     }
   }

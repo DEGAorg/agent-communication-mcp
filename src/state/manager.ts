@@ -3,6 +3,7 @@ import { AuthService } from '../supabase/auth.js';
 import { SupabaseService } from '../supabase/service.js';
 import { EncryptionService } from '../encryption/service.js';
 import { MessageHandler } from '../supabase/message-handler.js';
+import { ReceivedContentStorage } from '../storage/received-content.js';
 
 export enum SystemState {
   UNINITIALIZED = 'UNINITIALIZED',
@@ -20,44 +21,55 @@ export class StateManager {
   private static instance: StateManager;
   private currentState: SystemState = SystemState.UNINITIALIZED;
   private error: Error | null = null;
-  private authService: AuthService | null = null;
-  private supabaseService: SupabaseService | null = null;
-  private encryptionService: EncryptionService | null = null;
-  private messageHandler: MessageHandler | null = null;
+  private readonly authService: AuthService;
+  private readonly supabaseService: SupabaseService;
+  private readonly encryptionService: EncryptionService;
+  private readonly messageHandler: MessageHandler;
+  private readonly receivedContentStorage: ReceivedContentStorage;
 
-  private constructor() {}
+  private constructor(
+    authService: AuthService,
+    supabaseService: SupabaseService,
+    encryptionService: EncryptionService,
+    messageHandler: MessageHandler,
+    receivedContentStorage: ReceivedContentStorage
+  ) {
+    this.authService = authService;
+    this.supabaseService = supabaseService;
+    this.encryptionService = encryptionService;
+    this.messageHandler = messageHandler;
+    this.receivedContentStorage = receivedContentStorage;
+  }
 
   static getInstance(): StateManager {
     if (!StateManager.instance) {
-      StateManager.instance = new StateManager();
+      // Create service instances
+      const authService = AuthService.getInstance();
+      const supabaseService = SupabaseService.getInstance();
+      const messageHandler = MessageHandler.getInstance();
+      const encryptionService = new EncryptionService();
+      const receivedContentStorage = ReceivedContentStorage.getInstance();
+
+      // Create the instance first
+      StateManager.instance = new StateManager(
+        authService,
+        supabaseService,
+        encryptionService,
+        messageHandler,
+        receivedContentStorage
+      );
+
+      // Set up dependencies after instance creation
+      authService.setSupabaseService(supabaseService);
+      supabaseService.setAuthService(authService);
+      supabaseService.setMessageHandler(messageHandler);
+      messageHandler.setAuthService(authService);
+      messageHandler.setStateManager(StateManager.instance);
+      messageHandler.setEncryptionService(encryptionService);
+      messageHandler.setSupabaseService(supabaseService);
+      messageHandler.setReceivedContentStorage(receivedContentStorage);
     }
     return StateManager.instance;
-  }
-
-  /**
-   * Initialize all services and set up dependencies
-   */
-  async initializeServices(): Promise<void> {
-    try {
-      // Create service instances
-      this.authService = AuthService.getInstance();
-      this.supabaseService = SupabaseService.getInstance();
-      this.messageHandler = MessageHandler.getInstance();
-      this.encryptionService = new EncryptionService();
-
-      // Set up dependencies
-      this.authService.setSupabaseService(this.supabaseService);
-      this.supabaseService.setAuthService(this.authService);
-      this.supabaseService.setMessageHandler(this.messageHandler);
-      this.messageHandler.setAuthService(this.authService);
-      this.messageHandler.setStateManager(this);
-      this.messageHandler.setEncryptionService(this.encryptionService);
-
-      logger.info('All services created and dependencies set up');
-    } catch (error) {
-      this.setState(SystemState.ERROR, error instanceof Error ? error : new Error(String(error)));
-      throw error;
-    }
   }
 
   getState(): SystemState {
@@ -69,61 +81,110 @@ export class StateManager {
   }
 
   getAuthService(): AuthService {
-    if (!this.authService) {
-      throw new Error('AuthService not initialized');
-    }
     return this.authService;
   }
 
   getSupabaseService(): SupabaseService {
-    if (!this.supabaseService) {
-      throw new Error('SupabaseService not initialized');
-    }
     return this.supabaseService;
   }
 
   getEncryptionService(): EncryptionService {
-    if (!this.encryptionService) {
-      throw new Error('EncryptionService not initialized');
-    }
     return this.encryptionService;
   }
 
   getMessageHandler(): MessageHandler {
-    if (!this.messageHandler) {
-      throw new Error('MessageHandler not initialized');
-    }
     return this.messageHandler;
   }
 
+  getReceivedContentStorage(): ReceivedContentStorage {
+    return this.receivedContentStorage;
+  }
+
   private setState(newState: SystemState, error: Error | null = null) {
+    const previousState = this.currentState;
     this.currentState = newState;
     this.error = error;
-    logger.info(`System state changed to: ${newState}`);
+    
+    if (error) {
+      logger.error({
+        msg: 'System state changed with error',
+        error: error.message,
+        details: error.stack,
+        context: {
+          previousState,
+          newState,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } else {
+      logger.info(`System state changed: ${previousState} -> ${newState}`);
+    }
+  }
+
+  private async processUnreadMessages(): Promise<void> {
+    try {
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new Error('No authenticated agent found');
+      }
+
+      // Get all unread messages for this agent
+      const messages = await this.supabaseService.getUnreadMessages(agentId);
+      
+      if (messages.length > 0) {
+        logger.info(`Processing ${messages.length} unread messages`);
+        
+        // Process each message sequentially to maintain order
+        for (const message of messages) {
+          try {
+            await this.messageHandler.handleMessage(message);
+          } catch (error) {
+            logger.error({
+              msg: `Error processing unread message ${message.id}`,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              details: error instanceof Error ? error.stack : String(error),
+              context: {
+                messageId: message.id,
+                timestamp: new Date().toISOString()
+              }
+            });
+            // Continue processing other messages even if one fails
+          }
+        }
+        
+        logger.info('Finished processing unread messages');
+      }
+    } catch (error) {
+      logger.error({
+        msg: 'Error processing unread messages',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'unread_messages',
+          state: this.currentState,
+          timestamp: new Date().toISOString()
+        }
+      });
+      throw error;
+    }
   }
 
   async initialize(): Promise<void> {
     try {
-      // First initialize all services and set up dependencies
-      await this.initializeServices();
-
-      if (!this.authService || !this.supabaseService || !this.encryptionService) {
-        throw new Error('Required services not initialized');
-      }
-
       // Start connection process
       this.setState(SystemState.CONNECTING);
       try {
         await this.supabaseService.initialize();
         this.setState(SystemState.CONNECTED);
       } catch (error) {
-        logger.error('Failed to connect to Supabase:', {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          state: this.currentState
+        logger.error({
+          msg: 'Failed to connect to Supabase',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
         });
         throw error;
       }
@@ -132,13 +193,14 @@ export class StateManager {
       try {
         await this.authService.initialize();
       } catch (error) {
-        logger.error('Failed to initialize auth service:', {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          state: this.currentState
+        logger.error({
+          msg: 'Failed to initialize auth service',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
         });
         throw error;
       }
@@ -180,15 +242,34 @@ export class StateManager {
       try {
         await this.supabaseService.setupRealtimeSubscriptions();
       } catch (error) {
-        logger.error('Failed to setup realtime subscriptions:', {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : error,
-          state: this.currentState
+        logger.error({
+          msg: 'Failed to setup realtime subscriptions',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            operation: 'realtime_setup',
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
         });
         throw error;
+      }
+
+      // Process any unread messages that arrived while offline
+      try {
+        await this.processUnreadMessages();
+      } catch (error) {
+        logger.error({
+          msg: 'Failed to process unread messages',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            operation: 'unread_messages',
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
+        });
+        // Don't throw here - we want to continue initialization even if message processing fails
       }
 
       // Check agent registration
@@ -210,18 +291,18 @@ export class StateManager {
       this.setState(SystemState.READY);
       logger.info('All services initialized successfully');
     } catch (error) {
-      const errorDetails = error instanceof Error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      } : error;
-      
-      logger.error('Failed to initialize system:', {
-        error: errorDetails,
-        state: this.currentState,
-        hasAuth: !!this.authService,
-        hasSupabase: !!this.supabaseService,
-        hasEncryption: !!this.encryptionService
+      logger.error({
+        msg: 'Failed to initialize system',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'system_initialization',
+          state: this.currentState,
+          hasAuth: !!this.authService,
+          hasSupabase: !!this.supabaseService,
+          hasEncryption: !!this.encryptionService,
+          timestamp: new Date().toISOString()
+        }
       });
       
       this.setState(SystemState.ERROR, error instanceof Error ? error : new Error(String(error)));
@@ -277,11 +358,20 @@ export class StateManager {
 
   async attemptRecovery(): Promise<void> {
     if (this.currentState === SystemState.ERROR) {
-      logger.info('Attempting to recover from error state...');
+      logger.info('Attempting to recover from error state');
       try {
         await this.initialize();
       } catch (error) {
-        logger.error('Recovery failed:', error);
+        logger.error({
+          msg: 'Recovery failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            operation: 'system_recovery',
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
+        });
         throw error;
       }
     }
