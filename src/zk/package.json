@@ -1,0 +1,17 @@
+{
+  "name": "zk-hello-world",
+  "version": "1.0.0",
+  "description": "Hello World Zero Knowledge Proof Test",
+  "main": "test_proof.ts",
+  "scripts": {
+    "test": "ts-node test_proof.ts"
+  },
+  "dependencies": {
+    "snarkjs": "^0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+} 
