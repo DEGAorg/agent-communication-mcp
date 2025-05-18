@@ -1,0 +1,20 @@
+{
+  "name": "zk-hello-world",
+  "version": "1.0.0",
+  "description": "Hello World Zero Knowledge Proof Test",
+  "main": "test_proof.ts",
+  "scripts": {
+    "test:basic": "ts-node test_proof.ts",
+    "test:enc": "ts-node test_encryption_proof.ts"
+  },
+  "dependencies": {
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.0"
+  },
+  "devDependencies": {
+    "@types/circomlibjs": "^0.1.6",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}

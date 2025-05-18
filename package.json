@@ -28,6 +28,8 @@
     "@supabase/supabase-js": "^2.39.0",
     "@types/inquirer": "^9.0.8",
     "chalk": "^5.3.0",
+    "circomlib": "^2.0.5",
+    "circomlibjs": "^0.1.7",
     "dotenv": "^16.5.0",
     "fp-ts": "^2.16.1",
     "inquirer": "^12.6.1",
@@ -38,6 +40,7 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@types/circomlibjs": "^0",
     "@types/jest": "^29.5.6",
     "@types/node": "^22.15.17",
     "@types/uuid": "^9.0.7",
