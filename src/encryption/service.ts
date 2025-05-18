@@ -2,6 +2,7 @@ import { logger } from '../logger.js';
 import { x25519 } from '@noble/curves/ed25519';
 import { randomBytes } from '@noble/hashes/utils';
 import { createCipheriv, createDecipheriv } from 'crypto';
+import { supabase } from '../supabase/config.js';
 
 export class EncryptionService {
   private readonly publicKey: Uint8Array;
@@ -49,54 +50,85 @@ export class EncryptionService {
 
   // Decrypt data with AES-256-GCM
   private decryptAES(encrypted: { nonce: string; ciphertext: string; tag: string }, key: Uint8Array): string {
-    const nonce = Buffer.from(encrypted.nonce, 'base64');
-    const ciphertext = Buffer.from(encrypted.ciphertext, 'base64');
-    const tag = Buffer.from(encrypted.tag, 'base64');
-
-    const decipher = createDecipheriv('aes-256-gcm', key, nonce);
-    decipher.setAuthTag(tag);
-
-    return Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final()
-    ]).toString('utf8');
+    try {
+      
+      const nonce = Buffer.from(encrypted.nonce, 'base64');
+      const ciphertext = Buffer.from(encrypted.ciphertext, 'base64');
+      const tag = Buffer.from(encrypted.tag, 'base64');
+  
+      const decipher = createDecipheriv('aes-256-gcm', key, nonce);
+      decipher.setAuthTag(tag);
+  
+      return Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final()
+      ]).toString('utf8');
+    } catch (error) {
+      logger.error('Error decrypting message:', error);
+      throw error;
+    }
   }
 
   // Encrypt a key with X25519
   private encryptKey(key: Uint8Array, recipientPublicKey: Uint8Array, senderPrivateKey: Uint8Array): string {
-    const sharedSecret = x25519.getSharedSecret(senderPrivateKey, recipientPublicKey);
-    const cipher = createCipheriv('aes-256-gcm', sharedSecret, Buffer.alloc(12, 0));
-    const encrypted = Buffer.concat([
-      cipher.update(key),
-      cipher.final()
-    ]);
-    return Buffer.concat([
-      encrypted,
-      cipher.getAuthTag()
-    ]).toString('base64');
+    try {
+      const sharedSecret = x25519.getSharedSecret(senderPrivateKey, recipientPublicKey);
+      logger.debug('Encrypting key with shared secret length:', sharedSecret.length);
+      
+      const nonce = Buffer.alloc(12, 0);
+      const cipher = createCipheriv('aes-256-gcm', sharedSecret.slice(0, 32), nonce);
+      
+      const encrypted = Buffer.concat([
+        cipher.update(key),
+        cipher.final()
+      ]);
+      
+      const result = Buffer.concat([
+        encrypted,
+        cipher.getAuthTag()
+      ]).toString('base64');
+      
+      logger.debug('Encrypted key length:', result.length);
+      return result;
+    } catch (error) {
+      logger.error('Error encrypting key:', error);
+      throw error;
+    }
   }
 
   // Decrypt a key with X25519
   private decryptKey(encryptedKey: string, senderPublicKey: Uint8Array, recipientPrivateKey: Uint8Array): Uint8Array {
-    const encrypted = Buffer.from(encryptedKey, 'base64');
-    const tag = encrypted.slice(-16);
-    const ciphertext = encrypted.slice(0, -16);
-    
-    const sharedSecret = x25519.getSharedSecret(recipientPrivateKey, senderPublicKey);
-    const decipher = createDecipheriv('aes-256-gcm', sharedSecret, Buffer.alloc(12, 0));
-    decipher.setAuthTag(tag);
-    
-    return Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final()
-    ]);
+    try {
+      const encrypted = Buffer.from(encryptedKey, 'base64');
+      logger.debug('Decrypting key with length:', encrypted.length);
+      
+      const tag = encrypted.slice(-16);
+      const ciphertext = encrypted.slice(0, -16);
+      
+      const sharedSecret = x25519.getSharedSecret(recipientPrivateKey, senderPublicKey);
+      logger.debug('Decrypting with shared secret length:', sharedSecret.length);
+      
+      const nonce = Buffer.alloc(12, 0);
+      const decipher = createDecipheriv('aes-256-gcm', sharedSecret.slice(0, 32), nonce);
+      decipher.setAuthTag(tag);
+
+      const decrypted = Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final()
+      ]);
+      
+      logger.debug('Decrypted key length:', decrypted.length);
+      return decrypted;
+    } catch (error) {
+      logger.error('Error decrypting key:', error);
+      throw error;
+    }
   }
 
   // Encrypt message for multiple recipients
   async encryptMessageForRecipients(
     message: string,
     recipientPublicKey: Uint8Array,
-    auditorPublicKey: Uint8Array,
     senderPrivateKey: Uint8Array
   ): Promise<{
     encryptedMessage: { nonce: string; ciphertext: string; tag: string };
@@ -107,6 +139,9 @@ export class EncryptionService {
     
     // Encrypt the message with AES
     const encryptedMessage = this.encryptAES(message, aesKey);
+    
+    // Get auditor's public key from database
+    const auditorPublicKey = await this.getAuditorPublicKey();
     
     // Encrypt the AES key for each recipient
     const encryptedKeys = {
@@ -120,6 +155,22 @@ export class EncryptionService {
     };
   }
 
+  // Get auditor's public key from database
+  private async getAuditorPublicKey(): Promise<Uint8Array> {
+    const auditorId = '00000000-0000-0000-0000-000000000000';
+    const { data: auditor } = await supabase
+      .from('agent_public_keys')
+      .select('public_key')
+      .eq('id', auditorId)
+      .single();
+
+    if (!auditor) {
+      throw new Error('Auditor public key not found in database');
+    }
+
+    return Buffer.from(auditor.public_key, 'base64');
+  }
+
   // Decrypt message using own private key and sender's public key
   async decryptMessage(
     encryptedMessage: { nonce: string; ciphertext: string; tag: string },
@@ -127,10 +178,15 @@ export class EncryptionService {
     senderPublicKey: Uint8Array,
     recipientPrivateKey: Uint8Array
   ): Promise<string> {
-    // First decrypt the AES key
-    const aesKey = this.decryptKey(encryptedKey, senderPublicKey, recipientPrivateKey);
-    
-    // Then decrypt the message
-    return this.decryptAES(encryptedMessage, aesKey);
+    try {
+      // First decrypt the AES key
+      const aesKey = this.decryptKey(encryptedKey, senderPublicKey, recipientPrivateKey);
+      
+      // Then decrypt the message
+      return this.decryptAES(encryptedMessage, aesKey);
+    } catch (error) {
+      logger.error('Error decrypting message:', error);
+      throw error;
+    }
   }
 } 
