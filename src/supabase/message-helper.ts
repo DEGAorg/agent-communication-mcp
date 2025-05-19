@@ -9,11 +9,33 @@ import {
   MESSAGE_PURPOSE,
   MessagePurpose,
   ServicePrivacySettings,
-  MessageCreate
+  MessageCreate,
+  SERVICE_PRIVACY_LEVELS
 } from './message-types.js';
 import { EncryptionService } from '../encryption/service.js';
 import { SupabaseService } from './service.js';
 import crypto from 'crypto';
+import { groth16 } from 'snarkjs';
+import { buildPoseidon } from 'circomlibjs';
+import * as fs from 'fs';
+
+// Helper function to hash 32 elements exactly as in the circuit
+async function hash32Array(poseidon: any, arr: string[]): Promise<string> {
+    const chunk1 = arr.slice(0, 11);
+    const chunk2 = arr.slice(11, 22);
+    const chunk3 = arr.slice(22, 32);
+
+    const chunk1BigInt = chunk1.map(x => BigInt(x));
+    const chunk2BigInt = chunk2.map(x => BigInt(x));
+    const chunk3BigInt = chunk3.map(x => BigInt(x));
+
+    const hash1 = poseidon.F.toObject(poseidon(chunk1BigInt));
+    const hash2 = poseidon.F.toObject(poseidon(chunk2BigInt));
+    const hash3 = poseidon.F.toObject(poseidon(chunk3BigInt));
+
+    const finalHash = poseidon.F.toObject(poseidon([hash1, hash2, hash3]));
+    return finalHash.toString();
+}
 
 export function createMessageMetadata(purpose?: MessagePurpose): Message['public']['content']['metadata'] {
   return {
@@ -78,6 +100,59 @@ export async function createMessage(
   // Generate a new conversation ID if none is provided
   const finalConversationId = conversationId || crypto.randomUUID();
 
+  // Generate ZK proof if this is a private message
+  let proof = undefined;
+  if (Object.keys(privateContent).length > 0) {
+    try {
+      // Initialize Poseidon hash function
+      const poseidon = await buildPoseidon();
+
+      // Convert keys to arrays of 32 elements
+      const aesKey = Array.from({ length: 32 }, (_, i) => 
+        i < encryptedKeys.recipient.length ? encryptedKeys.recipient[i] : '0'
+      );
+      const pubKeyB = Array.from({ length: 32 }, (_, i) => 
+        i < recipientPublicKey.length ? recipientPublicKey[i].toString() : '0'
+      );
+      const pubKeyAuditor = Array.from({ length: 32 }, (_, i) => 
+        i < process.env.AUDITOR_PUBLIC_KEY!.length ? process.env.AUDITOR_PUBLIC_KEY![i] : '0'
+      );
+
+      // Hash the keys using the circuit's exact method
+      const hashKey = await hash32Array(poseidon, aesKey);
+      const hashPubB = await hash32Array(poseidon, pubKeyB);
+      const hashPubAuditor = await hash32Array(poseidon, pubKeyAuditor);
+
+      // Combine hashes to get final encrypted keys
+      const encKeyForB = poseidon.F.toObject(poseidon([BigInt(hashKey), BigInt(hashPubB)]));
+      const encKeyForAuditor = poseidon.F.toObject(poseidon([BigInt(hashKey), BigInt(hashPubAuditor)]));
+
+      // Input values for the circuit
+      const input = {
+        pubKeyB: pubKeyB.map(x => x.toString()),
+        pubKeyAuditor: pubKeyAuditor.map(x => x.toString()),
+        encKeyForB: encKeyForB.toString(),
+        encKeyForAuditor: encKeyForAuditor.toString(),
+        aesKey: aesKey.map(x => x.toString())
+      };
+
+      // Generate proof
+      const { proof: zkProof, publicSignals } = await groth16.fullProve(
+        input,
+        "src/zk/proofs/encryption_proof.wasm",
+        "src/zk/proofs/encryption_proof_final.zkey"
+      );
+
+      proof = {
+        proof: zkProof,
+        publicSignals
+      };
+    } catch (error) {
+      console.error('Error generating ZK proof:', error);
+      throw new Error('Failed to generate ZK proof for private message');
+    }
+  }
+
   return {
     sender_agent_id: senderId,
     recipient_agent_id: recipientId,
@@ -87,7 +162,8 @@ export async function createMessage(
       encryptedKeys
     },
     parent_message_id: parentMessageId,
-    conversation_id: finalConversationId
+    conversation_id: finalConversationId,
+    proof
   };
 }
 
@@ -176,10 +252,6 @@ export async function createServiceDeliveryMessage(
   // Add service content to private data if privacy settings require it
   if (privacySettings.deliveryPrivacy === 'private') {
     privateData.content = serviceContent;
-  } else if (privacySettings.deliveryPrivacy === 'mixed') {
-    // For mixed privacy, we could implement a more sophisticated content filtering
-    // For now, we'll treat it as private
-    privateData.content = serviceContent;
   } else {
     // For public privacy, add content to public data
     publicData.content = serviceContent;
@@ -187,10 +259,6 @@ export async function createServiceDeliveryMessage(
 
   // Add conditions to private data if privacy settings require it
   if (privacySettings.conditions.privacy === 'private') {
-    privateData.conditions = privacySettings.conditions.text;
-  } else if (privacySettings.conditions.privacy === 'mixed') {
-    // For mixed privacy, we could implement a more sophisticated content filtering
-    // For now, we'll treat it as private
     privateData.conditions = privacySettings.conditions.text;
   } else {
     // For public privacy, add conditions to public data

@@ -121,11 +121,11 @@ export class MessageHandler {
       const combinedContent = {
         ...content.data,
         // Include private content if it exists and privacy settings allow
-        ...(privateContent.content && service.privacy_settings.deliveryPrivacy !== 'public' ? {
+        ...(privateContent.content && service.privacy_settings.deliveryPrivacy === 'private' ? {
           content: privateContent.content
         } : {}),
         // Include conditions if they exist and privacy settings allow
-        ...(privateContent.conditions && service.privacy_settings.conditions.privacy !== 'public' ? {
+        ...(privateContent.conditions && service.privacy_settings.conditions.privacy === 'private' ? {
           conditions: privateContent.conditions
         } : {})
       };
@@ -192,7 +192,7 @@ export class MessageHandler {
       const combinedContent = {
         ...content.data,
         // Include private payment details if they exist and privacy settings allow
-        ...(privateContent.amount && service.privacy_settings.paymentPrivacy !== 'public' ? {
+        ...(privateContent.amount && service.privacy_settings.paymentPrivacy === 'private' ? {
           amount: privateContent.amount
         } : {})
       };

@@ -34,8 +34,7 @@ export const MESSAGE_PURPOSE = {
 
 export const SERVICE_PRIVACY_LEVELS = {
   PUBLIC: 'public',
-  PRIVATE: 'private',
-  MIXED: 'mixed'
+  PRIVATE: 'private'
 } as const;
 
 export type MessageTopic = typeof MESSAGE_TOPICS[keyof typeof MESSAGE_TOPICS];
@@ -87,6 +86,10 @@ export interface Message {
   private: EncryptedMessage;
   conversation_id: string;
   parent_message_id?: string;
+  proof?: {
+    proof: any;
+    publicSignals: any;
+  };
 }
 
 // Type for creating new messages (before DB insertion)
@@ -97,6 +100,10 @@ export interface MessageCreate {
   private: EncryptedMessage;
   conversation_id: string;
   parent_message_id?: string;
+  proof?: {
+    proof: any;
+    publicSignals: any;
+  };
 }
 
 export interface ServicePrivacySettings {
