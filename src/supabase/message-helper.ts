@@ -80,6 +80,19 @@ export async function createMessage(
   const encryptionService = new EncryptionService();
   const supabaseService = SupabaseService.getInstance();
   
+  // If there's no private content, return message without encryption
+  if (Object.keys(privateContent).length === 0) {
+    return {
+      sender_agent_id: senderId,
+      recipient_agent_id: recipientId,
+      public: publicContent,
+      private: {},
+      parent_message_id: parentMessageId,
+      conversation_id: conversationId || crypto.randomUUID(),
+      proof: undefined
+    };
+  }
+
   // Get the sender's private key and recipient's public key
   const senderPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
   

@@ -67,15 +67,28 @@ export interface MessagePublic {
 }
 
 export interface EncryptedMessage {
-  encryptedMessage: {
+  encryptedMessage?: {
     nonce: string;
     ciphertext: string;
     tag: string;
   };
-  encryptedKeys: {
+  encryptedKeys?: {
     recipient: string;
     auditor: string;
   };
+}
+
+// Type guard to check if a message has encrypted content
+export function hasEncryptedContent(message: { private: EncryptedMessage }): message is { 
+  private: { 
+    encryptedMessage: { nonce: string; ciphertext: string; tag: string };
+    encryptedKeys: { recipient: string; auditor: string };
+  }
+} {
+  return !!(
+    message.private.encryptedMessage?.ciphertext &&
+    message.private.encryptedKeys?.recipient
+  );
 }
 
 export interface Message {

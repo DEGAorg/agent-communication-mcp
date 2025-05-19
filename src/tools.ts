@@ -8,7 +8,7 @@ import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
 import { createPaymentNotificationMessage, createMessageContent, createMessagePublic, createMessage } from './supabase/message-helper.js';
 import { ServiceContentStorage } from './storage/service-content.js';
-import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS } from './supabase/message-types.js';
+import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS, hasEncryptedContent } from './supabase/message-types.js';
 import { createServiceDeliveryMessage } from './supabase/message-helper.js';
 import { ReceivedContentStorage } from './storage/received-content.js';
 
@@ -531,7 +531,8 @@ export class ToolHandler {
       }
 
       // If we have a delivery message but no local content, decrypt and store it
-      try {
+      let decryptedContent: any;
+      if (hasEncryptedContent(deliveryMessage)) {
         const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
         const senderPublicKeyBase64 = await this.supabaseService.getAgentPublicKey(deliveryMessage.sender_agent_id);
         if (!senderPublicKeyBase64) {
@@ -539,7 +540,7 @@ export class ToolHandler {
         }
         const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
         
-        const decryptedContent = JSON.parse(
+        decryptedContent = JSON.parse(
           await this.encryptionService.decryptMessage(
             deliveryMessage.private.encryptedMessage,
             deliveryMessage.private.encryptedKeys.recipient,
@@ -547,56 +548,32 @@ export class ToolHandler {
             recipientPrivateKey
           )
         );
-        
-        // Store the decrypted content
-        await receivedContentStorage.storeContent({
-          payment_message_id: paymentMessageId,
-          service_id: serviceId,
-          content: decryptedContent,
-          version: deliveryMessage.public.content.data.version,
-          tags: ['received', 'decrypted']
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'completed',
-                message: 'Service content decrypted and stored',
-                serviceId,
-                version: deliveryMessage.public.content.data.version,
-                content: decryptedContent
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      } catch (error) {
-        logger.error({
-          msg: 'Error decrypting delivery message',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          details: error instanceof Error ? error.stack : String(error),
-          context: {
-            serviceId,
-            version: deliveryMessage.public.content.data.version
-          }
-        });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'error',
-                message: 'Failed to decrypt delivery message',
-                serviceId,
-                deliveryMessageId: deliveryMessage.id
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
       }
+      
+      // Store the decrypted content
+      await receivedContentStorage.storeContent({
+        payment_message_id: paymentMessageId,
+        service_id: serviceId,
+        content: decryptedContent,
+        version: deliveryMessage.public.content.data.version,
+        tags: ['received', 'decrypted']
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'completed',
+              message: 'Service content decrypted and stored',
+              serviceId,
+              version: deliveryMessage.public.content.data.version,
+              content: decryptedContent
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
     } catch (error) {
       logger.error({
         msg: 'Error querying service delivery',

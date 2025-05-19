@@ -1,4 +1,4 @@
-import { Message, MESSAGE_TOPICS, CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS } from './message-types.js';
+import { Message, MESSAGE_TOPICS, CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, hasEncryptedContent } from './message-types.js';
 import { logger } from '../logger.js';
 import { ServiceContentStorage } from '../storage/service-content.js';
 import { StateManager } from '../state/manager.js';
@@ -91,7 +91,7 @@ export class MessageHandler {
 
       // Decrypt private content if it exists
       let decryptedPrivateContent: Record<string, any> = {};
-      if (privateContent) {
+      if (hasEncryptedContent(message)) {
         const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
         
         // Get sender's public key from database
@@ -103,8 +103,8 @@ export class MessageHandler {
         
         decryptedPrivateContent = JSON.parse(
           await this.encryptionService!.decryptMessage(
-            privateContent.encryptedMessage,
-            privateContent.encryptedKeys.recipient,
+            message.private.encryptedMessage,
+            message.private.encryptedKeys.recipient,
             senderPublicKey,
             recipientPrivateKey
           )
@@ -146,7 +146,7 @@ export class MessageHandler {
       }
 
       // Verify ZK proof if there's private content
-      if (message.private.encryptedMessage) {
+      if (hasEncryptedContent(message)) {
         const isValid = await this.verifyProof(message);
         if (!isValid) {
           throw new Error('Invalid ZK proof for private content');
@@ -168,7 +168,7 @@ export class MessageHandler {
 
       // If content is encrypted, decrypt it
       let decryptedContent = combinedContent;
-      if (privateContent.encryptedMessage) {
+      if (hasEncryptedContent(message)) {
         try {
           const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
           const senderPublicKeyBase64 = await this.supabaseService!.getAgentPublicKey(message.sender_agent_id);
@@ -177,10 +177,12 @@ export class MessageHandler {
           }
           const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
           
+          // Since we've checked hasEncryptedContent, we know these fields exist
+          const { encryptedMessage, encryptedKeys } = message.private;
           decryptedContent = JSON.parse(
             await this.encryptionService!.decryptMessage(
-              privateContent.encryptedMessage,
-              privateContent.encryptedKeys.recipient,
+              encryptedMessage,
+              encryptedKeys.recipient,
               senderPublicKey,
               recipientPrivateKey
             )
@@ -225,7 +227,7 @@ export class MessageHandler {
       }
 
       // Verify ZK proof if there's private content
-      if (message.private.encryptedMessage) {
+      if (hasEncryptedContent(message)) {
         const isValid = await this.verifyProof(message);
         if (!isValid) {
           throw new Error('Invalid ZK proof for private content');
