@@ -114,17 +114,13 @@ export async function createPaymentNotificationMessage(
   // Determine what goes in public vs private based on privacy settings
   const publicData = {
     ...baseContent,
-    // Always public
-    status: baseContent.status,
-    service_name: baseContent.service_name,
-    timestamp: baseContent.timestamp,
-    transaction_id: baseContent.transaction_id
+    // Only handle amount privacy, everything else is public
+    amount: privacySettings?.paymentPrivacy === 'private' ? undefined : baseContent.amount
   };
 
   const privateData = {
-    // Private data based on privacy settings
-    amount: privacySettings?.paymentPrivacy === 'private' ? amount : undefined,
-    // Add any other private payment details here
+    // Only include amount in private data if privacy is set to private
+    amount: privacySettings?.paymentPrivacy === 'private' ? baseContent.amount : undefined
   };
 
   const content = createMessageContent(
