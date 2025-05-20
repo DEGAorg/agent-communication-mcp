@@ -18,6 +18,40 @@ import crypto from 'crypto';
 import { groth16 } from 'snarkjs';
 import { buildPoseidon } from 'circomlibjs';
 import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { logger } from '../logger.js';
+
+// Get the directory name of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Function to resolve ZK file paths
+function resolveZKFilePath(filename: string): string {
+  // First check if a custom path is set in environment
+  const customPath = process.env.ZK_FILES_PATH;
+  if (customPath) {
+    const customFilePath = path.join(customPath, filename);
+    if (fs.existsSync(customFilePath)) {
+      return customFilePath;
+    }
+    logger.warn(`Custom ZK file path ${customFilePath} not found, falling back to default location`);
+  }
+
+  // Try to find the file in the source directory
+  const sourcePath = path.join(__dirname, '..', '..', 'src', 'zk', 'proofs', filename);
+  if (fs.existsSync(sourcePath)) {
+    return sourcePath;
+  }
+
+  // Try to find the file in the build directory
+  const buildPath = path.join(__dirname, '..', 'zk', 'proofs', filename);
+  if (fs.existsSync(buildPath)) {
+    return buildPath;
+  }
+
+  throw new Error(`Could not find ZK file ${filename} in any of the expected locations`);
+}
 
 // Helper function to hash 32 elements exactly as in the circuit
 async function hash32Array(poseidon: any, arr: string[]): Promise<string> {
@@ -149,11 +183,21 @@ export async function createMessage(
         aesKey: aesKey.map(x => x.toString())
       };
 
+      // Check if ZK circuit files exist
+      const wasmPath = resolveZKFilePath('encryption_proof.wasm');
+      const zkeyPath = resolveZKFilePath('encryption_proof_final.zkey');
+      
+      logger.debug({
+        msg: 'Using ZK circuit files',
+        wasmPath,
+        zkeyPath
+      });
+
       // Generate proof
       const { proof: zkProof, publicSignals } = await groth16.fullProve(
         input,
-        "src/zk/proofs/encryption_proof.wasm",
-        "src/zk/proofs/encryption_proof_final.zkey"
+        wasmPath,
+        zkeyPath
       );
 
       proof = {
@@ -161,8 +205,16 @@ export async function createMessage(
         publicSignals
       };
     } catch (error) {
-      console.error('Error generating ZK proof:', error);
-      throw new Error('Failed to generate ZK proof for private message');
+      logger.error({
+        msg: 'Error generating ZK proof',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'zk_proof_generation',
+          timestamp: new Date().toISOString()
+        }
+      });
+      throw new Error(`Failed to generate ZK proof for private message: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
