@@ -154,6 +154,13 @@ export async function createMessage(
       // Initialize Poseidon hash function
       const poseidon = await buildPoseidon();
 
+      // Get auditor's public key from database
+      const auditorPublicKeyBase64 = await supabaseService.getAgentPublicKey('00000000-0000-0000-0000-000000000000'); // Auditor's fixed ID
+      if (!auditorPublicKeyBase64) {
+        throw new Error('Auditor public key not found in database');
+      }
+      const auditorPublicKey = Buffer.from(auditorPublicKeyBase64, 'base64');
+
       // Convert keys to arrays of 32 elements
       const aesKey = Array.from({ length: 32 }, (_, i) => 
         i < encryptedKeys.recipient.length ? encryptedKeys.recipient[i] : '0'
@@ -162,7 +169,7 @@ export async function createMessage(
         i < recipientPublicKey.length ? recipientPublicKey[i].toString() : '0'
       );
       const pubKeyAuditor = Array.from({ length: 32 }, (_, i) => 
-        i < process.env.AUDITOR_PUBLIC_KEY!.length ? process.env.AUDITOR_PUBLIC_KEY![i] : '0'
+        i < auditorPublicKey.length ? auditorPublicKey[i].toString() : '0'
       );
 
       // Hash the keys using the circuit's exact method
