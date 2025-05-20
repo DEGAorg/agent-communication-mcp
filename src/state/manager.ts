@@ -255,23 +255,6 @@ export class StateManager {
         throw error;
       }
 
-      // Process any unread messages that arrived while offline
-      try {
-        await this.processUnreadMessages();
-      } catch (error) {
-        logger.error({
-          msg: 'Failed to process unread messages',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          details: error instanceof Error ? error.stack : String(error),
-          context: {
-            operation: 'unread_messages',
-            state: this.currentState,
-            timestamp: new Date().toISOString()
-          }
-        });
-        // Don't throw here - we want to continue initialization even if message processing fails
-      }
-
       // Check agent registration
       this.setState(SystemState.REGISTERING);
       const agentId = this.authService.getCurrentUserId();
@@ -290,6 +273,23 @@ export class StateManager {
       // System is ready
       this.setState(SystemState.READY);
       logger.info('All services initialized successfully');
+
+      // Process any unread messages that arrived while offline
+      try {
+        await this.processUnreadMessages();
+      } catch (error) {
+        logger.error({
+          msg: 'Failed to process unread messages',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            operation: 'unread_messages',
+            state: this.currentState,
+            timestamp: new Date().toISOString()
+          }
+        });
+        // Don't throw here - we want to continue initialization even if message processing fails
+      }
     } catch (error) {
       logger.error({
         msg: 'Failed to initialize system',
