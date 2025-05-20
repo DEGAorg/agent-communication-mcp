@@ -8,7 +8,7 @@ import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
 import { createPaymentNotificationMessage, createMessageContent, createMessagePublic, createMessage } from './supabase/message-helper.js';
 import { ServiceContentStorage } from './storage/service-content.js';
-import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS } from './supabase/message-types.js';
+import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS, hasEncryptedContent } from './supabase/message-types.js';
 import { createServiceDeliveryMessage } from './supabase/message-helper.js';
 import { ReceivedContentStorage } from './storage/received-content.js';
 
@@ -55,19 +55,17 @@ export const ALL_TOOLS = [
         privacy_settings: {
           type: 'object',
           properties: {
-            contentPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
-            paymentPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
-            deliveryPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
+            privacy: { type: 'string', enum: ['public', 'private'] },
             conditions: {
               type: 'object',
               properties: {
                 text: { type: 'string' },
-                privacy: { type: 'string', enum: ['public', 'private', 'mixed'] }
+                privacy: { type: 'string', enum: ['public', 'private'] }
               },
               required: ['text', 'privacy']
             }
           },
-          required: ['contentPrivacy', 'paymentPrivacy', 'deliveryPrivacy', 'conditions']
+          required: ['privacy', 'conditions']
         }
       },
       required: ['name', 'type', 'price', 'description', 'privacy_settings']
@@ -118,14 +116,18 @@ export const ALL_TOOLS = [
 ];
 
 export class ToolHandler {
-  private stateManager: StateManager;
+  private stateManager: StateManager | null;
+  private readonly supabaseService: SupabaseService;
+  private readonly authService: AuthService;
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    supabaseService: SupabaseService,
     private readonly encryptionService: EncryptionService,
-    private readonly authService: AuthService = AuthService.getInstance()
+    authService: AuthService = AuthService.getInstance()
   ) {
     this.stateManager = StateManager.getInstance();
+    this.supabaseService = supabaseService;
+    this.authService = authService;
   }
 
   /**
@@ -138,7 +140,7 @@ export class ToolHandler {
   async handleToolCall(toolName: string, toolArgs: any): Promise<any> {
     try {
       // Ensure system is ready before handling any tool calls, with recovery attempt
-      await this.stateManager.ensureReadyWithRecovery();
+      await this.stateManager?.ensureReadyWithRecovery();
 
       switch (toolName) {
         case 'listServices':
@@ -468,143 +470,48 @@ export class ToolHandler {
         );
       }
 
-      // Get the payment message to verify ownership
-      const paymentMessage = await this.supabaseService.getMessageById(paymentMessageId);
-      if (!paymentMessage) {
+      // Get service details to find the service provider
+      const service = await this.supabaseService.getServiceById(serviceId);
+      if (!service) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          `Payment message ${paymentMessageId} not found`
+          `Service with ID ${serviceId} not found`
         );
       }
 
-      // Verify the agent is the recipient of the payment
-      if (paymentMessage.sender_agent_id !== agentId) {
+      // Verify the payment message belongs to the agent
+      const paymentMessage = await this.supabaseService.getMessageById(paymentMessageId);
+      if (!paymentMessage || paymentMessage.sender_agent_id !== agentId) {
         throw new McpError(
-          ErrorCode.InvalidRequest,
-          'Only the payment sender can query service delivery status'
+          ErrorCode.InvalidParams,
+          'You can only query the delivery status of your own payment messages'
         );
       }
 
-      // First check received content storage
-      const receivedContentStorage = ReceivedContentStorage.getInstance();
-      const receivedContent = await receivedContentStorage.getContent(serviceId, paymentMessageId);
-      
-      if (receivedContent) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'completed',
-                message: 'Service content retrieved from local storage',
-                serviceId,
-                version: receivedContent.version,
-                content: receivedContent.content,
-                tags: receivedContent.tags,
-                created_at: receivedContent.created_at,
-                updated_at: receivedContent.updated_at
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      }
+      // Check the delivery status
+      const deliveryStatus = await this.supabaseService.checkServiceDelivery(paymentMessageId, serviceId);
 
-      // If not found locally, check for delivery message
-      const deliveryMessage = await this.supabaseService.getMessageByParentId(paymentMessageId);
-      
-      if (!deliveryMessage) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'pending',
-                message: 'Service delivery not yet completed',
-                serviceId,
-                paymentMessageId
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      }
-
-      // If we have a delivery message but no local content, decrypt and store it
-      try {
-        const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-        const senderPublicKeyBase64 = await this.supabaseService.getAgentPublicKey(deliveryMessage.sender_agent_id);
-        if (!senderPublicKeyBase64) {
-          throw new Error(`Sender agent ${deliveryMessage.sender_agent_id} not found or has no public key`);
-        }
-        const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
-        
-        const decryptedContent = JSON.parse(
-          await this.encryptionService.decryptMessage(
-            deliveryMessage.private.encryptedMessage,
-            deliveryMessage.private.encryptedKeys.recipient,
-            senderPublicKey,
-            recipientPrivateKey
-          )
-        );
-        
-        // Store the decrypted content
-        await receivedContentStorage.storeContent({
-          payment_message_id: paymentMessageId,
-          service_id: serviceId,
-          content: decryptedContent,
-          version: deliveryMessage.public.content.data.version,
-          tags: ['received', 'decrypted']
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'completed',
-                message: 'Service content decrypted and stored',
-                serviceId,
-                version: deliveryMessage.public.content.data.version,
-                content: decryptedContent
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      } catch (error) {
-        logger.error({
-          msg: 'Error decrypting delivery message',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          details: error instanceof Error ? error.stack : String(error),
-          context: {
-            serviceId,
-            version: deliveryMessage.public.content.data.version
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'success',
+              message: 'Service delivery status retrieved successfully',
+              deliveryStatus
+            }, null, 2),
+            mimeType: 'application/json'
           }
-        });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'error',
-                message: 'Failed to decrypt delivery message',
-                serviceId,
-                deliveryMessageId: deliveryMessage.id
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      }
+        ]
+      };
     } catch (error) {
       logger.error({
         msg: 'Error querying service delivery',
         error: error instanceof Error ? error.message : 'Unknown error',
         details: error instanceof Error ? error.stack : String(error),
         context: {
-          serviceId: args.serviceId,
-          paymentMessageId: args.paymentMessageId
+          paymentMessageId,
+          serviceId
         }
       });
       if (error instanceof McpError) {
@@ -617,7 +524,30 @@ export class ToolHandler {
     }
   }
 
-  async cleanup() {
-    await this.supabaseService.cleanup();
+  async cleanup(): Promise<void> {
+    try {
+      logger.info('Cleaning up ToolHandler');
+      
+      // Clean up Supabase service
+      if (this.supabaseService) {
+        await this.supabaseService.cleanup();
+      }
+
+      // Clear service references
+      this.stateManager = null;
+
+      logger.info('ToolHandler cleanup completed');
+    } catch (error) {
+      logger.error({
+        msg: 'Error during ToolHandler cleanup',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'cleanup',
+          timestamp: new Date().toISOString()
+        }
+      });
+      throw error;
+    }
   }
-} 
+}

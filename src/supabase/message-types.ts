@@ -34,8 +34,7 @@ export const MESSAGE_PURPOSE = {
 
 export const SERVICE_PRIVACY_LEVELS = {
   PUBLIC: 'public',
-  PRIVATE: 'private',
-  MIXED: 'mixed'
+  PRIVATE: 'private'
 } as const;
 
 export type MessageTopic = typeof MESSAGE_TOPICS[keyof typeof MESSAGE_TOPICS];
@@ -68,25 +67,70 @@ export interface MessagePublic {
 }
 
 export interface EncryptedMessage {
-  encryptedMessage: {
+  encryptedMessage?: {
     nonce: string;
     ciphertext: string;
     tag: string;
   };
-  encryptedKeys: {
+  encryptedKeys?: {
     recipient: string;
     auditor: string;
   };
 }
 
+// Type guard to check if a message has encrypted content
+export function hasEncryptedContent(message: { private: EncryptedMessage }): message is { 
+  private: { 
+    encryptedMessage: { nonce: string; ciphertext: string; tag: string };
+    encryptedKeys: { recipient: string; auditor: string };
+  }
+} {
+  return !!(
+    message.private.encryptedMessage?.ciphertext &&
+    message.private.encryptedKeys?.recipient
+  );
+}
+
+export interface ZKProof {
+  proof: any;
+  publicSignals: any;
+}
+
 export interface Message {
-  id: string;
+  id?: string;
   sender_agent_id: string;
   recipient_agent_id: string;
-  public: MessagePublic;
+  public: MessagePublic | Record<string, never>;
   private: EncryptedMessage;
-  conversation_id: string;
   parent_message_id?: string;
+  conversation_id: string;
+  proof?: ZKProof;
+  created_at?: string;
+  read_at?: string | null;
+}
+
+// Type guard to check if a message has public content
+export function hasPublicContent(message: Message): message is Message & { public: MessagePublic } {
+  return !!(
+    message.public &&
+    typeof message.public === 'object' &&
+    Object.keys(message.public).length > 0 &&
+    'topic' in message.public &&
+    isValidMessageTopic(message.public.topic)
+  );
+}
+
+// Type guard to check if a message has private content
+export function hasPrivateContent(message: Message): message is Message & { private: EncryptedMessage } {
+  return !!(
+    message.private &&
+    typeof message.private === 'object' &&
+    Object.keys(message.private).length > 0 &&
+    (
+      (message.private.encryptedMessage && Object.keys(message.private.encryptedMessage).length > 0) ||
+      (message.private.encryptedKeys && Object.keys(message.private.encryptedKeys).length > 0)
+    )
+  );
 }
 
 // Type for creating new messages (before DB insertion)
@@ -97,12 +141,14 @@ export interface MessageCreate {
   private: EncryptedMessage;
   conversation_id: string;
   parent_message_id?: string;
+  proof?: {
+    proof: any;
+    publicSignals: any;
+  };
 }
 
 export interface ServicePrivacySettings {
-  contentPrivacy: ServicePrivacyLevel;
-  paymentPrivacy: ServicePrivacyLevel;
-  deliveryPrivacy: ServicePrivacyLevel;
+  privacy: ServicePrivacyLevel;
   conditions: {
     text: string;
     privacy: ServicePrivacyLevel;
@@ -110,9 +156,7 @@ export interface ServicePrivacySettings {
 }
 
 export interface ClientPrivacyPreferences {
-  contentPrivacy: ServicePrivacyLevel;
-  paymentPrivacy: ServicePrivacyLevel;
-  deliveryPrivacy: ServicePrivacyLevel;
+  privacy: ServicePrivacyLevel;
 }
 
 // Type guard functions
