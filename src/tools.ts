@@ -116,14 +116,18 @@ export const ALL_TOOLS = [
 ];
 
 export class ToolHandler {
-  private stateManager: StateManager;
+  private stateManager: StateManager | null;
+  private readonly supabaseService: SupabaseService;
+  private readonly authService: AuthService;
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    supabaseService: SupabaseService,
     private readonly encryptionService: EncryptionService,
-    private readonly authService: AuthService = AuthService.getInstance()
+    authService: AuthService = AuthService.getInstance()
   ) {
     this.stateManager = StateManager.getInstance();
+    this.supabaseService = supabaseService;
+    this.authService = authService;
   }
 
   /**
@@ -136,7 +140,7 @@ export class ToolHandler {
   async handleToolCall(toolName: string, toolArgs: any): Promise<any> {
     try {
       // Ensure system is ready before handling any tool calls, with recovery attempt
-      await this.stateManager.ensureReadyWithRecovery();
+      await this.stateManager?.ensureReadyWithRecovery();
 
       switch (toolName) {
         case 'listServices':
@@ -517,6 +521,33 @@ export class ToolHandler {
         ErrorCode.InternalError,
         `Failed to query service delivery: ${error instanceof Error ? error.message : String(error)}`
       );
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    try {
+      logger.info('Cleaning up ToolHandler');
+      
+      // Clean up Supabase service
+      if (this.supabaseService) {
+        await this.supabaseService.cleanup();
+      }
+
+      // Clear service references
+      this.stateManager = null;
+
+      logger.info('ToolHandler cleanup completed');
+    } catch (error) {
+      logger.error({
+        msg: 'Error during ToolHandler cleanup',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'cleanup',
+          timestamp: new Date().toISOString()
+        }
+      });
+      throw error;
     }
   }
 }
