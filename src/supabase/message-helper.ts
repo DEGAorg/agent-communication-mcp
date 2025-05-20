@@ -438,7 +438,7 @@ export async function createServiceDeliveryMessage(
   // Create the message content
   const content = createMessageContent(
     CONTENT_TYPES.TRANSACTION,
-    publicData,
+    privacySettings.privacy === 'private' ? {} : publicData,
     MESSAGE_PURPOSE.SERVICE_DELIVERY
   );
 
