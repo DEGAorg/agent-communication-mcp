@@ -4,10 +4,7 @@ import {
   MessagePublic,
   MESSAGE_TOPICS, 
   CONTENT_TYPES, 
-  TRANSACTION_TYPES,
   MESSAGE_STATUS,
-  MESSAGE_PURPOSE,
-  MessagePurpose,
   ServicePrivacySettings,
   MessageCreate,
   SERVICE_PRIVACY_LEVELS
@@ -115,23 +112,21 @@ async function hash32Array(poseidon: any, arr: string[]): Promise<string> {
     return finalHash.toString();
 }
 
-export function createMessageMetadata(purpose?: MessagePurpose): Message['public']['content']['metadata'] {
+export function createMessageMetadata(): Message['public']['content']['metadata'] {
   return {
     timestamp: new Date().toISOString(),
-    version: '1.0',
-    extra: purpose ? { purpose } : undefined
+    version: '1.0'
   };
 }
 
 export function createMessageContent<T>(
   type: Message['public']['content']['type'],
-  data: T,
-  purpose?: MessagePurpose
+  data: T
 ): MessageContent<T> {
   return {
     type,
     data,
-    metadata: createMessageMetadata(purpose)
+    metadata: createMessageMetadata()
   };
 }
 
@@ -355,14 +350,13 @@ export async function createPaymentNotificationMessage(
       content: {
         type: CONTENT_TYPES.TRANSACTION,
         data: {
-          type: TRANSACTION_TYPES.PAYMENT_NOTIFICATION,
           amount,
           status: MESSAGE_STATUS.PENDING,
           service_name: serviceName,
           timestamp: new Date().toISOString(),
           transaction_id: transactionId
         },
-        metadata: createMessageMetadata(MESSAGE_PURPOSE.PAYMENT_NOTIFICATION)
+        metadata: createMessageMetadata()
       }
     };
 
@@ -378,7 +372,6 @@ export async function createPaymentNotificationMessage(
 
   // For public privacy, create public content
   const publicData = {
-    type: TRANSACTION_TYPES.PAYMENT_NOTIFICATION,
     amount,
     status: MESSAGE_STATUS.PENDING,
     service_name: serviceName,
@@ -388,8 +381,7 @@ export async function createPaymentNotificationMessage(
 
   const content = createMessageContent(
     CONTENT_TYPES.TRANSACTION,
-    publicData,
-    MESSAGE_PURPOSE.PAYMENT_NOTIFICATION
+    publicData
   );
 
   const publicContent = createMessagePublic(
@@ -428,7 +420,6 @@ export async function createServiceDeliveryMessage(
       content: {
         type: CONTENT_TYPES.TRANSACTION,
         data: {
-          type: TRANSACTION_TYPES.SERVICE_DELIVERY,
           status: MESSAGE_STATUS.COMPLETED,
           service_name: serviceName,
           version,
@@ -436,7 +427,7 @@ export async function createServiceDeliveryMessage(
           content: serviceContent,
           conditions: privacySettings.conditions.text
         },
-        metadata: createMessageMetadata(MESSAGE_PURPOSE.SERVICE_DELIVERY)
+        metadata: createMessageMetadata()
       }
     };
 
@@ -452,7 +443,6 @@ export async function createServiceDeliveryMessage(
 
   // For public privacy, create public content
   const publicData = {
-    type: TRANSACTION_TYPES.SERVICE_DELIVERY,
     status: MESSAGE_STATUS.COMPLETED,
     service_name: serviceName,
     version,
@@ -463,8 +453,7 @@ export async function createServiceDeliveryMessage(
 
   const content = createMessageContent(
     CONTENT_TYPES.TRANSACTION,
-    publicData,
-    MESSAGE_PURPOSE.SERVICE_DELIVERY
+    publicData
   );
 
   const publicContent = createMessagePublic(
@@ -497,7 +486,6 @@ export async function createServiceFeedbackMessage(
 ): Promise<MessageCreate> {
   // Always create public feedback
   const publicData = {
-    type: TRANSACTION_TYPES.SERVICE_FEEDBACK,
     status: MESSAGE_STATUS.COMPLETED,
     service_name: serviceName,
     rating,
@@ -507,12 +495,11 @@ export async function createServiceFeedbackMessage(
 
   const content = createMessageContent(
     CONTENT_TYPES.TRANSACTION,
-    publicData,
-    MESSAGE_PURPOSE.SERVICE_FEEDBACK
+    publicData
   );
 
   const publicContent = createMessagePublic(
-    MESSAGE_TOPICS.DELIVERY,
+    MESSAGE_TOPICS.FEEDBACK,
     content,
     serviceId
   );

@@ -1,4 +1,4 @@
-import { Message, MESSAGE_TOPICS, CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, hasEncryptedContent, hasPublicContent, hasPrivateContent, MessageTopic, MessageContent, MessagePublic, EncryptedMessage } from './message-types.js';
+import { Message, MESSAGE_TOPICS, CONTENT_TYPES, MESSAGE_STATUS, hasEncryptedContent, hasPublicContent, hasPrivateContent, MessageTopic, MessageContent, MessagePublic, EncryptedMessage } from './message-types.js';
 import { logger } from '../logger.js';
 import { ServiceContentStorage } from '../storage/service-content.js';
 import { StateManager } from '../state/manager.js';
