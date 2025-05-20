@@ -59,9 +59,27 @@ async function hash32Array(poseidon: any, arr: string[]): Promise<string> {
     const chunk2 = arr.slice(11, 22);
     const chunk3 = arr.slice(22, 32);
 
-    const chunk1BigInt = chunk1.map(x => BigInt(x));
-    const chunk2BigInt = chunk2.map(x => BigInt(x));
-    const chunk3BigInt = chunk3.map(x => BigInt(x));
+    // Helper function to safely convert string to BigInt
+    const safeToBigInt = (str: string): bigint => {
+        // Remove any non-numeric characters that BigInt doesn't support
+        // Keep only digits, minus sign at the beginning, and 'n' suffix
+        const sanitized = String(str).replace(/[^\d-n]/g, '').replace(/^-+/, '-');
+        try {
+            return BigInt(sanitized || '0');
+        } catch (error) {
+            logger.warn({
+                msg: `Failed to convert value to BigInt: ${str} (sanitized: ${sanitized})`,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            // Return 0n as a fallback for invalid values
+            return BigInt(0);
+        }
+    };
+
+    // Convert chunks to BigInt arrays
+    const chunk1BigInt = chunk1.map(x => safeToBigInt(x));
+    const chunk2BigInt = chunk2.map(x => safeToBigInt(x));
+    const chunk3BigInt = chunk3.map(x => safeToBigInt(x));
 
     const hash1 = poseidon.F.toObject(poseidon(chunk1BigInt));
     const hash2 = poseidon.F.toObject(poseidon(chunk2BigInt));
@@ -161,15 +179,40 @@ export async function createMessage(
       }
       const auditorPublicKey = Buffer.from(auditorPublicKeyBase64, 'base64');
 
+      // Helper function to ensure safe string representation for BigInt conversion
+      const safeToString = (val: any): string => {
+        if (val === undefined || val === null) return '0';
+        // Convert to string and ensure only valid characters for BigInt conversion
+        // (digits, minus sign at beginning, and optionally 'n' at the end)
+        return String(val).replace(/[^\d-n]/g, '').replace(/^-+/, '-') || '0';
+      };
+
+      // Helper function to safely convert to BigInt
+      const safeToBigInt = (str: string): bigint => {
+        // Remove any non-numeric characters that BigInt doesn't support
+        // Keep only digits, minus sign at the beginning, and 'n' suffix
+        const sanitized = String(str).replace(/[^\d-n]/g, '').replace(/^-+/, '-');
+        try {
+          return BigInt(sanitized || '0');
+        } catch (error) {
+          logger.warn({
+            msg: `Failed to convert value to BigInt: ${str} (sanitized: ${sanitized})`,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+          // Return 0n as a fallback for invalid values
+          return BigInt(0);
+        }
+      };
+
       // Convert keys to arrays of 32 elements
       const aesKey = Array.from({ length: 32 }, (_, i) => 
-        i < encryptedKeys.recipient.length ? encryptedKeys.recipient[i] : '0'
+        i < encryptedKeys.recipient.length ? safeToString(encryptedKeys.recipient[i]) : '0'
       );
       const pubKeyB = Array.from({ length: 32 }, (_, i) => 
-        i < recipientPublicKey.length ? recipientPublicKey[i].toString() : '0'
+        i < recipientPublicKey.length ? safeToString(recipientPublicKey[i]) : '0'
       );
       const pubKeyAuditor = Array.from({ length: 32 }, (_, i) => 
-        i < auditorPublicKey.length ? auditorPublicKey[i].toString() : '0'
+        i < auditorPublicKey.length ? safeToString(auditorPublicKey[i]) : '0'
       );
 
       // Hash the keys using the circuit's exact method
@@ -178,8 +221,8 @@ export async function createMessage(
       const hashPubAuditor = await hash32Array(poseidon, pubKeyAuditor);
 
       // Combine hashes to get final encrypted keys
-      const encKeyForB = poseidon.F.toObject(poseidon([BigInt(hashKey), BigInt(hashPubB)]));
-      const encKeyForAuditor = poseidon.F.toObject(poseidon([BigInt(hashKey), BigInt(hashPubAuditor)]));
+      const encKeyForB = poseidon.F.toObject(poseidon([safeToBigInt(hashKey), safeToBigInt(hashPubB)]));
+      const encKeyForAuditor = poseidon.F.toObject(poseidon([safeToBigInt(hashKey), safeToBigInt(hashPubAuditor)]));
 
       // Input values for the circuit
       const input = {
