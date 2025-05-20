@@ -6,12 +6,8 @@ import { Service } from './supabase/config.js';
 import { validateService } from './validation/service.js';
 import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
-import { createPaymentNotificationMessage, createMessageContent, createMessagePublic, createMessage } from './supabase/message-helper.js';
+import { createPaymentNotificationMessage, createServiceFeedbackMessage } from './supabase/message-helper.js';
 import { ServiceContentStorage } from './storage/service-content.js';
-import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS, hasEncryptedContent } from './supabase/message-types.js';
-import { createServiceDeliveryMessage } from './supabase/message-helper.js';
-import { ReceivedContentStorage } from './storage/received-content.js';
-import { createServiceFeedbackMessage } from './supabase/message-helper.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [

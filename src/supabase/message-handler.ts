@@ -1,4 +1,4 @@
-import { Message, MESSAGE_TOPICS, CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, hasEncryptedContent, hasPublicContent, hasPrivateContent, MessageTopic, MessageContent, MessagePublic, EncryptedMessage } from './message-types.js';
+import { Message, MESSAGE_TOPICS, CONTENT_TYPES, MESSAGE_STATUS, hasEncryptedContent, hasPublicContent, hasPrivateContent, MessageTopic, MessageContent, MessagePublic, EncryptedMessage } from './message-types.js';
 import { logger } from '../logger.js';
 import { ServiceContentStorage } from '../storage/service-content.js';
 import { StateManager } from '../state/manager.js';
@@ -101,6 +101,11 @@ export class MessageHandler {
           break;
         case MESSAGE_TOPICS.PAYMENT:
           await this.handlePaymentMessage(message as Message & { private: EncryptedMessage }, decryptedPublicContent);
+          break;
+        case MESSAGE_TOPICS.FEEDBACK:
+          // Mark feedback message as read
+          await this.supabaseService!.markMessageAsRead(message.id!);
+          logger.info(`Feedback message marked as read: ${message.id}`);
           break;
         default:
           logger.warn(`Unhandled message topic: ${topic}`);
