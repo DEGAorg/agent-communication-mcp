@@ -53,6 +53,32 @@ function resolveZKFilePath(filename: string): string {
   throw new Error(`Could not find ZK file ${filename} in any of the expected locations`);
 }
 
+export async function verifyProof(message: Message): Promise<boolean> {
+  if (!message.proof) {
+    // If no proof is provided but there's private content, reject
+    if (message.private.encryptedMessage) {
+      throw new Error('Private content provided without ZK proof');
+    }
+    return true;
+  }
+
+  try {
+    const verificationKeyPath = resolveZKFilePath('encryption_proof_verification_key.json');
+    const verificationKey = JSON.parse(
+      await fs.promises.readFile(verificationKeyPath, 'utf8')
+    );
+    
+    return await groth16.verify(
+      verificationKey,
+      message.proof.publicSignals,
+      message.proof.proof
+    );
+  } catch (error) {
+    logger.error('Error verifying ZK proof:', error);
+    throw new Error('Failed to verify ZK proof');
+  }
+}
+
 // Helper function to hash 32 elements exactly as in the circuit
 async function hash32Array(poseidon: any, arr: string[]): Promise<string> {
     const chunk1 = arr.slice(0, 11);

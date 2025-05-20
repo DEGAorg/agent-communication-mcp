@@ -5,7 +5,7 @@ import { StateManager } from '../state/manager.js';
 import { EncryptionService } from '../encryption/service.js';
 import { AuthService } from './auth.js';
 import { SupabaseService } from './service.js';
-import { createServiceDeliveryMessage } from './message-helper.js';
+import { createServiceDeliveryMessage, verifyProof } from './message-helper.js';
 import { ReceivedContentStorage } from '../storage/received-content.js';
 import { groth16 } from 'snarkjs';
 import { buildPoseidon } from 'circomlibjs';
@@ -51,31 +51,6 @@ export class MessageHandler {
   private ensureServicesInitialized(): void {
     if (!this.stateManager || !this.encryptionService || !this.authService || !this.supabaseService || !this.receivedContentStorage) {
       throw new Error('Required services not initialized');
-    }
-  }
-
-  private async verifyProof(message: Message): Promise<boolean> {
-    if (!message.proof) {
-      // If no proof is provided but there's private content, reject
-      if (message.private.encryptedMessage) {
-        throw new Error('Private content provided without ZK proof');
-      }
-      return true;
-    }
-
-    try {
-      const verificationKey = JSON.parse(
-        await fs.promises.readFile('src/zk/proofs/encryption_proof_verification_key.json', 'utf8')
-      );
-      
-      return await groth16.verify(
-        verificationKey,
-        message.proof.publicSignals,
-        message.proof.proof
-      );
-    } catch (error) {
-      logger.error('Error verifying ZK proof:', error);
-      throw new Error('Failed to verify ZK proof');
     }
   }
 
@@ -147,7 +122,7 @@ export class MessageHandler {
 
       // Verify ZK proof if there's private content
       if (hasEncryptedContent(message)) {
-        const isValid = await this.verifyProof(message);
+        const isValid = await verifyProof(message);
         if (!isValid) {
           throw new Error('Invalid ZK proof for private content');
         }
@@ -228,7 +203,7 @@ export class MessageHandler {
 
       // Verify ZK proof if there's private content
       if (hasEncryptedContent(message)) {
-        const isValid = await this.verifyProof(message);
+        const isValid = await verifyProof(message);
         if (!isValid) {
           throw new Error('Invalid ZK proof for private content');
         }
