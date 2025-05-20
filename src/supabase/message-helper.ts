@@ -481,4 +481,48 @@ export async function createServiceDeliveryMessage(
     parentMessageId,
     conversationId
   );
+}
+
+// Add new function for creating service feedback messages
+export async function createServiceFeedbackMessage(
+  senderId: string,
+  recipientId: string,
+  serviceId: string,
+  rating: number,
+  feedback: string,
+  serviceName: string,
+  privacySettings: ServicePrivacySettings,
+  parentMessageId?: string,
+  conversationId?: string
+): Promise<MessageCreate> {
+  // Always create public feedback
+  const publicData = {
+    type: TRANSACTION_TYPES.SERVICE_FEEDBACK,
+    status: MESSAGE_STATUS.COMPLETED,
+    service_name: serviceName,
+    rating,
+    feedback,
+    timestamp: new Date().toISOString()
+  };
+
+  const content = createMessageContent(
+    CONTENT_TYPES.TRANSACTION,
+    publicData,
+    MESSAGE_PURPOSE.SERVICE_FEEDBACK
+  );
+
+  const publicContent = createMessagePublic(
+    MESSAGE_TOPICS.DELIVERY,
+    content,
+    serviceId
+  );
+
+  return await createMessage(
+    senderId,
+    recipientId,
+    publicContent,
+    {}, // Empty private content
+    parentMessageId,
+    conversationId
+  );
 } 

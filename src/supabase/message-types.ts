@@ -15,7 +15,8 @@ export const CONTENT_TYPES = {
 export const TRANSACTION_TYPES = {
   PAYMENT_NOTIFICATION: 'payment_notification',
   PAYMENT_CONFIRMATION: 'payment_confirmation',
-  SERVICE_DELIVERY: 'service_delivery'
+  SERVICE_DELIVERY: 'service_delivery',
+  SERVICE_FEEDBACK: 'service_feedback'
 } as const;
 
 export const MESSAGE_STATUS = {
@@ -29,7 +30,8 @@ export const MESSAGE_PURPOSE = {
   PAYMENT_NOTIFICATION: 'payment_notification',
   PAYMENT_CONFIRMATION: 'payment_confirmation',
   SERVICE_DELIVERY: 'service_delivery',
-  SERVICE_REQUEST: 'service_request'
+  SERVICE_REQUEST: 'service_request',
+  SERVICE_FEEDBACK: 'service_feedback'
 } as const;
 
 export const SERVICE_PRIVACY_LEVELS = {
