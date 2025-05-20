@@ -227,15 +227,22 @@ export async function createMessage(
       };
 
       // Convert keys to arrays of 32 elements
-      const aesKey = Array.from({ length: 32 }, (_, i) => 
-        i < encryptedKeys.recipient.length ? safeToString(encryptedKeys.recipient[i]) : '0'
-      );
-      const pubKeyB = Array.from({ length: 32 }, (_, i) => 
-        i < recipientPublicKey.length ? safeToString(recipientPublicKey[i]) : '0'
-      );
-      const pubKeyAuditor = Array.from({ length: 32 }, (_, i) => 
-        i < auditorPublicKey.length ? safeToString(auditorPublicKey[i]) : '0'
-      );
+      const aesKey = Array.from({ length: 32 }, (_, i) => {
+        if (i >= encryptedKeys.recipient.length) return '0';
+        // Convert the entire base64 string to a buffer first
+        const buffer = Buffer.from(encryptedKeys.recipient, 'base64');
+        return buffer[i]?.toString() || '0';
+      });
+      
+      const pubKeyB = Array.from({ length: 32 }, (_, i) => {
+        if (i >= recipientPublicKey.length) return '0';
+        return recipientPublicKey[i]?.toString() || '0';
+      });
+      
+      const pubKeyAuditor = Array.from({ length: 32 }, (_, i) => {
+        if (i >= auditorPublicKey.length) return '0';
+        return auditorPublicKey[i]?.toString() || '0';
+      });
 
       // Hash the keys using the circuit's exact method
       const hashKey = await hash32Array(poseidon, aesKey);
