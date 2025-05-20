@@ -47,20 +47,46 @@ export const ALL_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string' },
-        type: { type: 'string' },
-        example: { type: 'string' },
-        price: { type: 'number' },
-        description: { type: 'string' },
+        name: { 
+          type: 'string',
+          description: 'Service name (3-100 chars, alphanumeric with spaces, hyphens, underscores)'
+        },
+        type: { 
+          type: 'string',
+          description: 'Service type (3-50 chars, alphanumeric with underscores). Suggested types: AI_ANALYSIS, DATA_PROCESSING, API_INTEGRATION, COMPUTATION, STORAGE, CUSTOM'
+        },
+        example: { 
+          type: 'string',
+          description: 'Optional example of service usage (max 500 chars)'
+        },
+        price: { 
+          type: 'number',
+          description: 'Service price (0 to 1,000,000)'
+        },
+        description: { 
+          type: 'string',
+          description: 'Service description (10-1000 chars)'
+        },
         privacy_settings: {
           type: 'object',
           properties: {
-            privacy: { type: 'string', enum: ['public', 'private'] },
+            privacy: { 
+              type: 'string', 
+              enum: ['public', 'private'],
+              description: 'Overall privacy level of the service (case-insensitive)'
+            },
             conditions: {
               type: 'object',
               properties: {
-                text: { type: 'string' },
-                privacy: { type: 'string', enum: ['public', 'private'] }
+                text: { 
+                  type: 'string',
+                  description: 'Terms and conditions text'
+                },
+                privacy: { 
+                  type: 'string', 
+                  enum: ['public', 'private'],
+                  description: 'Privacy level of the terms and conditions (case-insensitive)'
+                }
               },
               required: ['text', 'privacy']
             }

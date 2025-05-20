@@ -1,5 +1,6 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../logger.js';
+import { SERVICE_PRIVACY_LEVELS } from '../supabase/message-types.js';
 
 // Suggested service types for guidance
 export const SUGGESTED_SERVICE_TYPES = [
@@ -26,7 +27,8 @@ const VALIDATION_RULES = {
   type: {
     minLength: 3,
     maxLength: 50,
-    pattern: /^[A-Z0-9_]+$/
+    pattern: /^[a-zA-Z0-9_]+$/,
+    suggestedTypes: SUGGESTED_SERVICE_TYPES
   },
   description: {
     minLength: 10,
@@ -38,6 +40,9 @@ const VALIDATION_RULES = {
   price: {
     min: 0,
     max: 1000000
+  },
+  privacy: {
+    allowedValues: Object.values(SERVICE_PRIVACY_LEVELS)
   }
 } as const;
 
@@ -97,7 +102,13 @@ export function validateServiceType(type: string): void {
   }
   
   if (!VALIDATION_RULES.type.pattern.test(type)) {
-    throw new ServiceValidationError('Service type can only contain uppercase letters, numbers, and underscores');
+    throw new ServiceValidationError('Service type can only contain letters, numbers, and underscores');
+  }
+
+  // Convert to uppercase for comparison with suggested types
+  const upperType = type.toUpperCase();
+  if (!VALIDATION_RULES.type.suggestedTypes.includes(upperType as typeof SUGGESTED_SERVICE_TYPES[number])) {
+    logger.warn(`Service type "${type}" is not in the suggested types list. Suggested types are: ${VALIDATION_RULES.type.suggestedTypes.join(', ')}`);
   }
 }
 
@@ -139,16 +150,36 @@ export function validateServicePrice(price: number): void {
   }
 }
 
+export function validateServicePrivacy(privacy: string): void {
+  if (!privacy) {
+    throw new ServiceValidationError('Service privacy level is required');
+  }
+
+  const normalizedPrivacy = privacy.toLowerCase();
+  if (!VALIDATION_RULES.privacy.allowedValues.includes(normalizedPrivacy as typeof SERVICE_PRIVACY_LEVELS[keyof typeof SERVICE_PRIVACY_LEVELS])) {
+    throw new ServiceValidationError(`Invalid privacy level. Must be one of: ${VALIDATION_RULES.privacy.allowedValues.join(', ')}`);
+  }
+}
+
 export function validateService(service: {
   name: string;
   type: string;
   example?: string;
   price: number;
   description: string;
+  privacy_settings: {
+    privacy: string;
+    conditions: {
+      text: string;
+      privacy: string;
+    };
+  };
 }): void {
   validateServiceName(service.name);
   validateServiceType(service.type);
   validateServiceDescription(service.description);
   validateServiceExample(service.example);
   validateServicePrice(service.price);
+  validateServicePrivacy(service.privacy_settings.privacy);
+  validateServicePrivacy(service.privacy_settings.conditions.privacy);
 } 
