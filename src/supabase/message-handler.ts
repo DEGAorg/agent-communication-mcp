@@ -132,12 +132,24 @@ export class MessageHandler {
       }
     }
 
+    // Validate and get content data
+    const contentData = message.public?.content?.data || decryptedContent?.content?.data;
+    if (!contentData) {
+      throw new Error('No valid content data found in message');
+    }
+
+    // Get and validate version
+    const version = message.public?.content?.metadata?.version || decryptedContent?.content?.metadata?.version;
+    if (!version) {
+      throw new Error('No valid version found in message content metadata');
+    }
+
     // Store the received content for the recipient
     await this.receivedContentStorage!.storeContent({
       payment_message_id: message.parent_message_id!,
       service_id: serviceId,
-      content: message.public?.content.data || decryptedContent?.content.data,
-      version: message.public?.content.data.version || decryptedContent?.content.data.version,
+      content: contentData,
+      version,
       tags: ['received']
     });
 
