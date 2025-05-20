@@ -102,6 +102,11 @@ export class MessageHandler {
         case MESSAGE_TOPICS.PAYMENT:
           await this.handlePaymentMessage(message as Message & { private: EncryptedMessage }, decryptedPublicContent);
           break;
+        case MESSAGE_TOPICS.FEEDBACK:
+          // Mark feedback message as read
+          await this.supabaseService!.markMessageAsRead(message.id!);
+          logger.info(`Feedback message marked as read: ${message.id}`);
+          break;
         default:
           logger.warn(`Unhandled message topic: ${topic}`);
       }
