@@ -182,24 +182,46 @@ export async function createMessage(
       // Helper function to ensure safe string representation for BigInt conversion
       const safeToString = (val: any): string => {
         if (val === undefined || val === null) return '0';
-        // Convert to string and ensure only valid characters for BigInt conversion
-        // (digits, minus sign at beginning, and optionally 'n' at the end)
-        return String(val).replace(/[^\d-n]/g, '').replace(/^-+/, '-') || '0';
+        
+        // For Buffer/Uint8Array, convert to hex string first
+        if (Buffer.isBuffer(val) || val instanceof Uint8Array) {
+          return BigInt('0x' + Buffer.from(val).toString('hex')).toString();
+        }
+        
+        // For base64 strings, convert to hex first
+        if (typeof val === 'string' && /^[A-Za-z0-9+/=]+$/.test(val)) {
+          try {
+            const buffer = Buffer.from(val, 'base64');
+            return BigInt('0x' + buffer.toString('hex')).toString();
+          } catch (error) {
+            logger.warn({
+              msg: `Failed to convert base64 string to BigInt: ${val}`,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            return '0';
+          }
+        }
+        
+        // For regular numbers/strings, ensure only valid characters
+        return String(val).replace(/[^\d-]/g, '').replace(/^-+/, '-') || '0';
       };
 
       // Helper function to safely convert to BigInt
       const safeToBigInt = (str: string): bigint => {
-        // Remove any non-numeric characters that BigInt doesn't support
-        // Keep only digits, minus sign at the beginning, and 'n' suffix
-        const sanitized = String(str).replace(/[^\d-n]/g, '').replace(/^-+/, '-');
         try {
+          // If it's a hex string (from Buffer conversion), convert directly
+          if (str.startsWith('0x')) {
+            return BigInt(str);
+          }
+          
+          // For regular numbers, sanitize and convert
+          const sanitized = String(str).replace(/[^\d-]/g, '').replace(/^-+/, '-');
           return BigInt(sanitized || '0');
         } catch (error) {
           logger.warn({
-            msg: `Failed to convert value to BigInt: ${str} (sanitized: ${sanitized})`,
+            msg: `Failed to convert value to BigInt: ${str}`,
             error: error instanceof Error ? error.message : 'Unknown error'
           });
-          // Return 0n as a fallback for invalid values
           return BigInt(0);
         }
       };
