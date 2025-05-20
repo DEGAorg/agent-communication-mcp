@@ -204,12 +204,12 @@ export async function createPaymentNotificationMessage(
   const publicData = {
     ...baseContent,
     // Only handle amount privacy, everything else is public
-    amount: privacySettings?.paymentPrivacy === 'private' ? undefined : baseContent.amount
+    amount: privacySettings?.privacy === 'private' ? undefined : baseContent.amount
   };
 
   const privateData = {
     // Only include amount in private data if privacy is set to private
-    amount: privacySettings?.paymentPrivacy === 'private' ? baseContent.amount : undefined
+    amount: privacySettings?.privacy === 'private' ? baseContent.amount : undefined
   };
 
   const content = createMessageContent(
@@ -263,7 +263,7 @@ export async function createServiceDeliveryMessage(
   const privateData: Record<string, any> = {};
   
   // Add service content to private data if privacy settings require it
-  if (privacySettings.deliveryPrivacy === 'private') {
+  if (privacySettings.privacy === 'private') {
     privateData.content = serviceContent;
   } else {
     // For public privacy, add content to public data

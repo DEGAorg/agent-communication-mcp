@@ -157,7 +157,7 @@ export class MessageHandler {
       const combinedContent = {
         ...content.data,
         // Include private content if it exists and privacy settings allow
-        ...(privateContent.content && service.privacy_settings.deliveryPrivacy === 'private' ? {
+        ...(privateContent.content && service.privacy_settings.privacy === 'private' ? {
           content: privateContent.content
         } : {}),
         // Include conditions if they exist and privacy settings allow
@@ -238,7 +238,7 @@ export class MessageHandler {
       const combinedContent = {
         ...content.data,
         // Include private payment details if they exist and privacy settings allow
-        ...(privateContent.amount && service.privacy_settings.paymentPrivacy === 'private' ? {
+        ...(privateContent.amount && service.privacy_settings.privacy === 'private' ? {
           amount: privateContent.amount
         } : {})
       };

@@ -55,19 +55,17 @@ export const ALL_TOOLS = [
         privacy_settings: {
           type: 'object',
           properties: {
-            contentPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
-            paymentPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
-            deliveryPrivacy: { type: 'string', enum: ['public', 'private', 'mixed'] },
+            privacy: { type: 'string', enum: ['public', 'private'] },
             conditions: {
               type: 'object',
               properties: {
                 text: { type: 'string' },
-                privacy: { type: 'string', enum: ['public', 'private', 'mixed'] }
+                privacy: { type: 'string', enum: ['public', 'private'] }
               },
               required: ['text', 'privacy']
             }
           },
-          required: ['contentPrivacy', 'paymentPrivacy', 'deliveryPrivacy', 'conditions']
+          required: ['privacy', 'conditions']
         }
       },
       required: ['name', 'type', 'price', 'description', 'privacy_settings']
@@ -468,107 +466,35 @@ export class ToolHandler {
         );
       }
 
-      // Get the payment message to verify ownership
-      const paymentMessage = await this.supabaseService.getMessageById(paymentMessageId);
-      if (!paymentMessage) {
+      // Get service details to find the service provider
+      const service = await this.supabaseService.getServiceById(serviceId);
+      if (!service) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          `Payment message ${paymentMessageId} not found`
+          `Service with ID ${serviceId} not found`
         );
       }
 
-      // Verify the agent is the recipient of the payment
-      if (paymentMessage.sender_agent_id !== agentId) {
+      // Verify the payment message belongs to the agent
+      const paymentMessage = await this.supabaseService.getMessageById(paymentMessageId);
+      if (!paymentMessage || paymentMessage.sender_agent_id !== agentId) {
         throw new McpError(
-          ErrorCode.InvalidRequest,
-          'Only the payment sender can query service delivery status'
+          ErrorCode.InvalidParams,
+          'You can only query the delivery status of your own payment messages'
         );
       }
 
-      // First check received content storage
-      const receivedContentStorage = ReceivedContentStorage.getInstance();
-      const receivedContent = await receivedContentStorage.getContent(serviceId, paymentMessageId);
-      
-      if (receivedContent) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'completed',
-                message: 'Service content retrieved from local storage',
-                serviceId,
-                version: receivedContent.version,
-                content: receivedContent.content,
-                tags: receivedContent.tags,
-                created_at: receivedContent.created_at,
-                updated_at: receivedContent.updated_at
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      }
-
-      // If not found locally, check for delivery message
-      const deliveryMessage = await this.supabaseService.getMessageByParentId(paymentMessageId);
-      
-      if (!deliveryMessage) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'pending',
-                message: 'Service delivery not yet completed',
-                serviceId,
-                paymentMessageId
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      }
-
-      // If we have a delivery message but no local content, decrypt and store it
-      let decryptedContent: any;
-      if (hasEncryptedContent(deliveryMessage)) {
-        const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-        const senderPublicKeyBase64 = await this.supabaseService.getAgentPublicKey(deliveryMessage.sender_agent_id);
-        if (!senderPublicKeyBase64) {
-          throw new Error(`Sender agent ${deliveryMessage.sender_agent_id} not found or has no public key`);
-        }
-        const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
-        
-        decryptedContent = JSON.parse(
-          await this.encryptionService.decryptMessage(
-            deliveryMessage.private.encryptedMessage,
-            deliveryMessage.private.encryptedKeys.recipient,
-            senderPublicKey,
-            recipientPrivateKey
-          )
-        );
-      }
-      
-      // Store the decrypted content
-      await receivedContentStorage.storeContent({
-        payment_message_id: paymentMessageId,
-        service_id: serviceId,
-        content: decryptedContent,
-        version: deliveryMessage.public.content.data.version,
-        tags: ['received', 'decrypted']
-      });
+      // Check the delivery status
+      const deliveryStatus = await this.supabaseService.checkServiceDelivery(paymentMessageId, serviceId);
 
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
-              status: 'completed',
-              message: 'Service content decrypted and stored',
-              serviceId,
-              version: deliveryMessage.public.content.data.version,
-              content: decryptedContent
+              status: 'success',
+              message: 'Service delivery status retrieved successfully',
+              deliveryStatus
             }, null, 2),
             mimeType: 'application/json'
           }
@@ -580,8 +506,8 @@ export class ToolHandler {
         error: error instanceof Error ? error.message : 'Unknown error',
         details: error instanceof Error ? error.stack : String(error),
         context: {
-          serviceId: args.serviceId,
-          paymentMessageId: args.paymentMessageId
+          paymentMessageId,
+          serviceId
         }
       });
       if (error instanceof McpError) {
@@ -593,8 +519,4 @@ export class ToolHandler {
       );
     }
   }
-
-  async cleanup() {
-    await this.supabaseService.cleanup();
-  }
-} 
+}

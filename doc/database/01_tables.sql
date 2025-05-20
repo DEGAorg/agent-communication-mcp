@@ -20,9 +20,7 @@ CREATE TABLE services (
   description TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   privacy_settings JSONB NOT NULL DEFAULT '{
-    "contentPrivacy": "public",
-    "paymentPrivacy": "public",
-    "deliveryPrivacy": "public",
+    "privacy": "public",
     "conditions": {
       "text": "",
       "privacy": "public"

@@ -120,9 +120,7 @@ export interface MessageCreate {
 }
 
 export interface ServicePrivacySettings {
-  contentPrivacy: ServicePrivacyLevel;
-  paymentPrivacy: ServicePrivacyLevel;
-  deliveryPrivacy: ServicePrivacyLevel;
+  privacy: ServicePrivacyLevel;
   conditions: {
     text: string;
     privacy: ServicePrivacyLevel;
@@ -130,9 +128,7 @@ export interface ServicePrivacySettings {
 }
 
 export interface ClientPrivacyPreferences {
-  contentPrivacy: ServicePrivacyLevel;
-  paymentPrivacy: ServicePrivacyLevel;
-  deliveryPrivacy: ServicePrivacyLevel;
+  privacy: ServicePrivacyLevel;
 }
 
 // Type guard functions

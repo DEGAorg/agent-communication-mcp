@@ -5,6 +5,8 @@ import { MessageHandler } from './message-handler.js';
 import { AuthService } from './auth.js';
 import { createClient } from '@supabase/supabase-js';
 import { TRANSACTION_TYPES } from './message-types.js';
+import { ReceivedContentStorage } from '../storage/received-content.js';
+import { EncryptionService } from '../encryption/service.js';
 
 export class SupabaseService {
   private static instance: SupabaseService;
@@ -491,6 +493,86 @@ export class SupabaseService {
     } catch (error) {
       logger.error('Error getting message by parent ID:', error);
       return null;
+    }
+  }
+
+  async checkServiceDelivery(paymentMessageId: string, serviceId: string): Promise<{ status: string; content?: any; version?: string }> {
+    try {
+      // First check if we have the content in local storage
+      const receivedContentStorage = ReceivedContentStorage.getInstance();
+      const localContent = await receivedContentStorage.getContent(serviceId, paymentMessageId);
+      
+      if (localContent) {
+        return {
+          status: 'delivered',
+          content: localContent.content,
+          version: localContent.version
+        };
+      }
+
+      // If not in local storage, check for delivery message
+      const deliveryMessage = await this.getMessageByParentId(paymentMessageId);
+      if (!deliveryMessage) {
+        return { status: 'pending' };
+      }
+
+      // If we have a delivery message, check if it has private content
+      if (deliveryMessage.private?.encryptedMessage && deliveryMessage.private?.encryptedKeys?.recipient) {
+        // Get the recipient's private key
+        const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
+        
+        // Get sender's public key
+        const senderPublicKeyBase64 = await this.getAgentPublicKey(deliveryMessage.sender_agent_id);
+        if (!senderPublicKeyBase64) {
+          throw new Error(`Sender agent ${deliveryMessage.sender_agent_id} not found or has no public key`);
+        }
+        const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
+
+        // Decrypt the content
+        const encryptionService = new EncryptionService();
+        const decryptedContent = JSON.parse(
+          await encryptionService.decryptMessage(
+            deliveryMessage.private.encryptedMessage,
+            deliveryMessage.private.encryptedKeys.recipient,
+            senderPublicKey,
+            recipientPrivateKey
+          )
+        );
+
+        // Store the decrypted content locally for future use
+        await receivedContentStorage.storeContent({
+          payment_message_id: paymentMessageId,
+          service_id: serviceId,
+          content: decryptedContent,
+          version: deliveryMessage.public.content.data.version,
+          tags: ['received']
+        });
+
+        return {
+          status: 'delivered',
+          content: decryptedContent,
+          version: deliveryMessage.public.content.data.version
+        };
+      }
+
+      // If no private content, return public content
+      return {
+        status: 'delivered',
+        content: deliveryMessage.public.content.data,
+        version: deliveryMessage.public.content.data.version
+      };
+    } catch (error) {
+      logger.error({
+        msg: 'Error checking service delivery',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          paymentMessageId,
+          serviceId,
+          timestamp: new Date().toISOString()
+        }
+      });
+      throw error;
     }
   }
 
