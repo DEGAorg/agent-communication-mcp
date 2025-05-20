@@ -150,7 +150,7 @@ export function createMessagePublic(
 export async function createMessage(
   senderId: string,
   recipientId: string,
-  publicContent: MessagePublic,
+  publicContent: MessagePublic | Record<string, never>,
   privateContent: Record<string, any> = {},
   parentMessageId?: string,
   conversationId?: string
@@ -163,7 +163,7 @@ export async function createMessage(
     return {
       sender_agent_id: senderId,
       recipient_agent_id: recipientId,
-      public: publicContent,
+      public: publicContent as MessagePublic,
       private: {},
       parent_message_id: parentMessageId,
       conversation_id: conversationId || crypto.randomUUID(),
@@ -326,7 +326,7 @@ export async function createMessage(
   return {
     sender_agent_id: senderId,
     recipient_agent_id: recipientId,
-    public: publicContent,
+    public: publicContent as MessagePublic,
     private: {
       encryptedMessage,
       encryptedKeys
@@ -347,26 +347,43 @@ export async function createPaymentNotificationMessage(
   transactionId: string,
   privacySettings?: ServicePrivacySettings
 ): Promise<MessageCreate> {
-  // Create base content
-  const baseContent = {
+  // If privacy is private, everything goes into private content
+  if (privacySettings?.privacy === 'private') {
+    const privateData = {
+      topic: MESSAGE_TOPICS.PAYMENT,
+      serviceId,
+      content: {
+        type: CONTENT_TYPES.TRANSACTION,
+        data: {
+          type: TRANSACTION_TYPES.PAYMENT_NOTIFICATION,
+          amount,
+          status: MESSAGE_STATUS.PENDING,
+          service_name: serviceName,
+          timestamp: new Date().toISOString(),
+          transaction_id: transactionId
+        },
+        metadata: createMessageMetadata(MESSAGE_PURPOSE.PAYMENT_NOTIFICATION)
+      }
+    };
+
+    return await createMessage(
+      senderId,
+      recipientId,
+      {}, // Empty public content
+      privateData,
+      undefined,
+      undefined
+    );
+  }
+
+  // For public privacy, create public content
+  const publicData = {
     type: TRANSACTION_TYPES.PAYMENT_NOTIFICATION,
     amount,
     status: MESSAGE_STATUS.PENDING,
     service_name: serviceName,
     timestamp: new Date().toISOString(),
     transaction_id: transactionId
-  };
-
-  // Determine what goes in public vs private based on privacy settings
-  const publicData = {
-    ...baseContent,
-    // Only handle amount privacy, everything else is public
-    amount: privacySettings?.privacy === 'private' ? undefined : baseContent.amount
-  };
-
-  const privateData = {
-    // Only include amount in private data if privacy is set to private
-    amount: privacySettings?.privacy === 'private' ? baseContent.amount : undefined
   };
 
   const content = createMessageContent(
@@ -381,10 +398,14 @@ export async function createPaymentNotificationMessage(
     serviceId
   );
 
-  // Only include private content if there's something to encrypt
-  const privateContent = Object.values(privateData).some(v => v !== undefined) ? privateData : {};
-
-  return await createMessage(senderId, recipientId, publicContent, privateContent);
+  return await createMessage(
+    senderId,
+    recipientId,
+    publicContent,
+    {}, // Empty private content
+    undefined,
+    undefined
+  );
 }
 
 // Add a new function for creating service delivery messages
@@ -399,64 +420,64 @@ export async function createServiceDeliveryMessage(
   parentMessageId?: string,
   conversationId?: string
 ): Promise<MessageCreate> {
-  // Create base content that is always public
-  const publicData: {
-    type: typeof TRANSACTION_TYPES.SERVICE_DELIVERY;
-    status: typeof MESSAGE_STATUS.COMPLETED;
-    service_name: string;
-    version: string;
-    timestamp: string;
-    content?: any;
-    conditions?: string;
-  } = {
+  // If privacy is private, everything goes into private content
+  if (privacySettings.privacy === 'private') {
+    const privateData = {
+      topic: MESSAGE_TOPICS.DELIVERY,
+      serviceId,
+      content: {
+        type: CONTENT_TYPES.TRANSACTION,
+        data: {
+          type: TRANSACTION_TYPES.SERVICE_DELIVERY,
+          status: MESSAGE_STATUS.COMPLETED,
+          service_name: serviceName,
+          version,
+          timestamp: new Date().toISOString(),
+          content: serviceContent,
+          conditions: privacySettings.conditions.text
+        },
+        metadata: createMessageMetadata(MESSAGE_PURPOSE.SERVICE_DELIVERY)
+      }
+    };
+
+    return await createMessage(
+      senderId,
+      recipientId,
+      {}, // Empty public content
+      privateData,
+      parentMessageId,
+      conversationId
+    );
+  }
+
+  // For public privacy, create public content
+  const publicData = {
     type: TRANSACTION_TYPES.SERVICE_DELIVERY,
     status: MESSAGE_STATUS.COMPLETED,
     service_name: serviceName,
     version,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    content: serviceContent,
+    conditions: privacySettings.conditions.text
   };
 
-  // Create private data based on privacy settings
-  const privateData: Record<string, any> = {};
-  
-  // Add service content to private data if privacy settings require it
-  if (privacySettings.privacy === 'private') {
-    privateData.content = serviceContent;
-  } else {
-    // For public privacy, add content to public data
-    publicData.content = serviceContent;
-  }
-
-  // Add conditions to private data if privacy settings require it
-  if (privacySettings.conditions.privacy === 'private') {
-    privateData.conditions = privacySettings.conditions.text;
-  } else {
-    // For public privacy, add conditions to public data
-    publicData.conditions = privacySettings.conditions.text;
-  }
-
-  // Create the message content
   const content = createMessageContent(
     CONTENT_TYPES.TRANSACTION,
     publicData,
     MESSAGE_PURPOSE.SERVICE_DELIVERY
   );
 
-  // Create the public content
   const publicContent = createMessagePublic(
     MESSAGE_TOPICS.DELIVERY,
     content,
     serviceId
   );
 
-  // Only include private content if there's something to encrypt
-  const privateContent = Object.keys(privateData).length > 0 ? privateData : {};
-
   return await createMessage(
     senderId,
     recipientId,
     publicContent,
-    privateContent,
+    {}, // Empty private content
     parentMessageId,
     conversationId
   );

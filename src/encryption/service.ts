@@ -3,6 +3,7 @@ import { x25519 } from '@noble/curves/ed25519';
 import { randomBytes } from '@noble/hashes/utils';
 import { createCipheriv, createDecipheriv } from 'crypto';
 import { supabase } from '../supabase/config.js';
+import { MessagePublic } from '../supabase/message-types.js';
 
 export class EncryptionService {
   private readonly publicKey: Uint8Array;
@@ -186,6 +187,39 @@ export class EncryptionService {
       return this.decryptAES(encryptedMessage, aesKey);
     } catch (error) {
       logger.error('Error decrypting message:', error);
+      throw error;
+    }
+  }
+
+  // Decrypt message and check if it's a MessagePublic
+  async decryptMessageAndCheckType(
+    encryptedMessage: { nonce: string; ciphertext: string; tag: string },
+    encryptedKey: string,
+    senderPublicKey: Uint8Array,
+    recipientPrivateKey: Uint8Array
+  ): Promise<{ isPublicMessage: boolean; publicMessage?: MessagePublic; privateContent?: Record<string, any> }> {
+    try {
+      const decryptedContent = JSON.parse(
+        await this.decryptMessage(encryptedMessage, encryptedKey, senderPublicKey, recipientPrivateKey)
+      );
+
+      // Simple validation for MessagePublic structure
+      if (
+        typeof decryptedContent === 'object' &&
+        decryptedContent !== null &&
+        'topic' in decryptedContent &&
+        'content' in decryptedContent
+      ) {
+        return {
+          isPublicMessage: true,
+          publicMessage: decryptedContent as MessagePublic
+        };
+      }
+
+      // If it's not a valid MessagePublic, throw an error
+      throw new Error('Decrypted content does not match MessagePublic structure');
+    } catch (error) {
+      logger.error('Error decrypting and checking message type:', error);
       throw error;
     }
   }

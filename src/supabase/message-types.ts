@@ -91,18 +91,32 @@ export function hasEncryptedContent(message: { private: EncryptedMessage }): mes
   );
 }
 
+export interface ZKProof {
+  proof: any;
+  publicSignals: any;
+}
+
 export interface Message {
-  id: string;
+  id?: string;
   sender_agent_id: string;
   recipient_agent_id: string;
-  public: MessagePublic;
+  public: MessagePublic | Record<string, never>;
   private: EncryptedMessage;
-  conversation_id: string;
   parent_message_id?: string;
-  proof?: {
-    proof: any;
-    publicSignals: any;
-  };
+  conversation_id: string;
+  proof?: ZKProof;
+  created_at?: string;
+  read_at?: string | null;
+}
+
+// Type guard to check if a message has public content
+export function hasPublicContent(message: Message): message is Message & { public: MessagePublic } {
+  return !!message.public;
+}
+
+// Type guard to check if a message has private content
+export function hasPrivateContent(message: Message): message is Message & { private: EncryptedMessage } {
+  return !!message.private;
 }
 
 // Type for creating new messages (before DB insertion)
