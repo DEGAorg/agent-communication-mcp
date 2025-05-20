@@ -6,11 +6,8 @@ import { Service } from './supabase/config.js';
 import { validateService } from './validation/service.js';
 import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
-import { createPaymentNotificationMessage, createMessageContent, createMessagePublic, createMessage } from './supabase/message-helper.js';
+import { createPaymentNotificationMessage, createServiceFeedbackMessage } from './supabase/message-helper.js';
 import { ServiceContentStorage } from './storage/service-content.js';
-import { CONTENT_TYPES, TRANSACTION_TYPES, MESSAGE_STATUS, MESSAGE_PURPOSE, MESSAGE_TOPICS, ClientPrivacyPreferences, SERVICE_PRIVACY_LEVELS, hasEncryptedContent } from './supabase/message-types.js';
-import { createServiceDeliveryMessage } from './supabase/message-helper.js';
-import { ReceivedContentStorage } from './storage/received-content.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -47,20 +44,46 @@ export const ALL_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string' },
-        type: { type: 'string' },
-        example: { type: 'string' },
-        price: { type: 'number' },
-        description: { type: 'string' },
+        name: { 
+          type: 'string',
+          description: 'Service name (3-100 chars, alphanumeric with spaces, hyphens, underscores)'
+        },
+        type: { 
+          type: 'string',
+          description: 'Service type (3-50 chars, alphanumeric with underscores). Suggested types: AI_ANALYSIS, DATA_PROCESSING, API_INTEGRATION, COMPUTATION, STORAGE, CUSTOM'
+        },
+        example: { 
+          type: 'string',
+          description: 'Optional example of service usage (max 500 chars)'
+        },
+        price: { 
+          type: 'number',
+          description: 'Service price (0 to 1,000,000)'
+        },
+        description: { 
+          type: 'string',
+          description: 'Service description (10-1000 chars)'
+        },
         privacy_settings: {
           type: 'object',
           properties: {
-            privacy: { type: 'string', enum: ['public', 'private'] },
+            privacy: { 
+              type: 'string', 
+              enum: ['public', 'private'],
+              description: 'Overall privacy level of the service (case-insensitive)'
+            },
             conditions: {
               type: 'object',
               properties: {
-                text: { type: 'string' },
-                privacy: { type: 'string', enum: ['public', 'private'] }
+                text: { 
+                  type: 'string',
+                  description: 'Terms and conditions text'
+                },
+                privacy: { 
+                  type: 'string', 
+                  enum: ['public', 'private'],
+                  description: 'Privacy level of the terms and conditions (case-insensitive)'
+                }
               },
               required: ['text', 'privacy']
             }
@@ -112,6 +135,34 @@ export const ALL_TOOLS = [
       },
       required: ['paymentMessageId', 'serviceId']
     }
+  },
+  {
+    name: 'provideServiceFeedback',
+    description: 'Provide feedback or review for a service that was delivered. This tool allows agents to rate and review services they have received, helping build reputation and trust in the marketplace. You must provide the service ID, rating, and feedback text. The feedback will be sent to the service provider.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        serviceId: { 
+          type: 'string',
+          description: 'ID of the service being reviewed'
+        },
+        rating: {
+          type: 'number',
+          description: 'Rating from 1 to 5',
+          minimum: 1,
+          maximum: 5
+        },
+        feedback: {
+          type: 'string',
+          description: 'Detailed feedback about the service (10-1000 chars)'
+        },
+        parentMessageId: {
+          type: 'string',
+          description: 'Optional ID of the delivery message this feedback is for'
+        }
+      },
+      required: ['serviceId', 'rating', 'feedback']
+    }
   }
 ];
 
@@ -157,6 +208,9 @@ export class ToolHandler {
         
         case 'queryServiceDelivery':
           return await this.handleQueryServiceDelivery(toolArgs);
+        
+        case 'provideServiceFeedback':
+          return await this.handleProvideServiceFeedback(toolArgs);
         
         default:
           throw new McpError(
@@ -520,6 +574,87 @@ export class ToolHandler {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to query service delivery: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private async handleProvideServiceFeedback(args: { serviceId: string; rating: number; feedback: string; parentMessageId?: string }) {
+    const { serviceId, rating, feedback, parentMessageId } = args;
+    if (!serviceId || !rating || !feedback) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'Missing required parameters: serviceId, rating, and feedback'
+      );
+    }
+
+    try {
+      // Get the current user ID from the auth service
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'No authenticated agent found'
+        );
+      }
+
+      // Get service details to find the service provider
+      const service = await this.supabaseService.getServiceById(serviceId);
+      if (!service) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Service with ID ${serviceId} not found`
+        );
+      }
+
+      // Create and send the feedback message
+      const message = await createServiceFeedbackMessage(
+        agentId,
+        service.agent_id,
+        serviceId,
+        rating,
+        feedback,
+        service.name,
+        service.privacy_settings,
+        parentMessageId
+      );
+
+      const sentMessage = await this.supabaseService.sendMessage(message);
+
+      logger.info(`Service feedback provided successfully for service: ${service.name}`);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'success',
+              message: 'Service feedback provided successfully',
+              serviceId,
+              rating,
+              feedback,
+              feedbackMessageId: sentMessage.id
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error({
+        msg: 'Error providing service feedback',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          serviceId,
+          rating,
+          feedback,
+          parentMessageId
+        }
+      });
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to provide service feedback: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

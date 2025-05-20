@@ -4,7 +4,14 @@ import { logger } from '../logger.js';
 import { MessageHandler } from './message-handler.js';
 import { AuthService } from './auth.js';
 import { createClient } from '@supabase/supabase-js';
-import { TRANSACTION_TYPES } from './message-types.js';
+import { 
+  MESSAGE_TOPICS, 
+  CONTENT_TYPES, 
+  MESSAGE_STATUS,
+  hasPublicContent,
+  hasPrivateContent,
+  hasEncryptedContent
+} from './message-types.js';
 import { ReceivedContentStorage } from '../storage/received-content.js';
 import { EncryptionService } from '../encryption/service.js';
 
@@ -477,19 +484,18 @@ export class SupabaseService {
 
   async getMessageByParentId(parentMessageId: string): Promise<Message | null> {
     try {
-      const { data, error } = await supabase
+      const { data: deliveryMessage, error: deliveryError } = await supabase
         .from('messages')
         .select('*')
         .eq('parent_message_id', parentMessageId)
-        .eq('public->content->data->type', TRANSACTION_TYPES.SERVICE_DELIVERY)
         .single();
 
-      if (error) {
-        logger.error('Error getting message by parent ID:', error);
+      if (deliveryError) {
+        logger.error('Error getting message by parent ID:', deliveryError);
         return null;
       }
 
-      return data;
+      return deliveryMessage;
     } catch (error) {
       logger.error('Error getting message by parent ID:', error);
       return null;
@@ -516,8 +522,14 @@ export class SupabaseService {
         return { status: 'pending' };
       }
 
-      // If we have a delivery message, check if it has private content
-      if (deliveryMessage.private?.encryptedMessage && deliveryMessage.private?.encryptedKeys?.recipient) {
+      // Get content data from either public or private content
+      let contentData: any;
+      let version: string | undefined;
+
+      if (hasPublicContent(deliveryMessage)) {
+        contentData = deliveryMessage.public.content.data;
+        version = deliveryMessage.public.content.metadata.version;
+      } else if (hasPrivateContent(deliveryMessage) && hasEncryptedContent(deliveryMessage)) {
         // Get the recipient's private key
         const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
         
@@ -530,36 +542,36 @@ export class SupabaseService {
 
         // Decrypt the content
         const encryptionService = new EncryptionService();
-        const decryptedContent = JSON.parse(
-          await encryptionService.decryptMessage(
-            deliveryMessage.private.encryptedMessage,
-            deliveryMessage.private.encryptedKeys.recipient,
-            senderPublicKey,
-            recipientPrivateKey
-          )
+        const { publicMessage } = await encryptionService.decryptMessageAndCheckType(
+          deliveryMessage.private.encryptedMessage!,
+          deliveryMessage.private.encryptedKeys!.recipient,
+          senderPublicKey,
+          recipientPrivateKey
         );
 
-        // Store the decrypted content locally for future use
-        await receivedContentStorage.storeContent({
-          payment_message_id: paymentMessageId,
-          service_id: serviceId,
-          content: decryptedContent,
-          version: deliveryMessage.public.content.data.version,
-          tags: ['received']
-        });
+        if (!publicMessage) {
+          throw new Error('Failed to decrypt message content');
+        }
 
-        return {
-          status: 'delivered',
-          content: decryptedContent,
-          version: deliveryMessage.public.content.data.version
-        };
+        contentData = publicMessage.content.data;
+        version = publicMessage.content.metadata.version;
+      } else {
+        throw new Error('Message has no valid content');
       }
 
-      // If no private content, return public content
+      // Store the content locally for future use
+      await receivedContentStorage.storeContent({
+        payment_message_id: paymentMessageId,
+        service_id: serviceId,
+        content: contentData,
+        version,
+        tags: ['received']
+      });
+
       return {
-        status: 'delivered',
-        content: deliveryMessage.public.content.data,
-        version: deliveryMessage.public.content.data.version
+        status: 'received',
+        content: contentData,
+        version
       };
     } catch (error) {
       logger.error({
