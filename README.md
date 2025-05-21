@@ -25,12 +25,13 @@ yarn install
 ```
 
 2. Create a `.env` file in the project root with your Supabase credentials:
+```bash
+cp doc/env.example .env
+```
+
+Then edit the `.env` file with your credentials:
 ```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
 MCP_AUTH_EMAIL=your.email@example.com
-MCP_AUTH_POLL_INTERVAL=2000
-MCP_AUTH_MAX_POLL_ATTEMPTS=30
 ```
 
 ## Key Management
