@@ -28,7 +28,7 @@ describe('ToolHandler', () => {
   let testPrivateKey: Uint8Array;
   let testPublicKey: Uint8Array;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Clear all mocks before each test
     jest.clearAllMocks();
 
@@ -40,35 +40,20 @@ describe('ToolHandler', () => {
     process.env.AGENT_PRIVATE_KEY = Buffer.from(testPrivateKey).toString('base64');
     process.env.AGENT_PUBLIC_KEY = Buffer.from(testPublicKey).toString('base64');
 
-    // Initialize services
+    // Create mock services
     mockSupabaseService = {
+      cleanup: jest.fn(),
       listServices: jest.fn(),
       registerService: jest.fn(),
       getServiceById: jest.fn(),
-      cleanup: jest.fn(),
-      sendMessage: jest.fn()
+      sendMessage: jest.fn(),
+      getMessageById: jest.fn(),
+      checkServiceDelivery: jest.fn()
     } as unknown as SupabaseService;
 
     mockEncryptionService = {
-      encryptMessageForRecipients: jest.fn().mockImplementation(async (message, recipientPublicKey, auditorPublicKey, senderPrivateKey) => {
-        // For testing purposes, we'll just return a mock encrypted message
-        return {
-          encryptedMessage: {
-            nonce: 'test-nonce',
-            ciphertext: 'test-ciphertext',
-            tag: 'test-tag'
-          },
-          encryptedKeys: {
-            recipient: 'test-recipient-key',
-            auditor: 'test-auditor-key'
-          }
-        };
-      }),
-      decryptMessage: jest.fn().mockImplementation(async (encryptedMessage, encryptedKey, senderPublicKey, recipientPrivateKey) => {
-        // For testing purposes, return a mock decrypted message
-        return JSON.stringify({ amount: '100' });
-      }),
-      getPublicKey: jest.fn().mockReturnValue(Buffer.alloc(32)) // Return a 32-byte buffer as public key
+      encrypt: jest.fn(),
+      decrypt: jest.fn()
     } as unknown as EncryptionService;
 
     mockAuthService = {
@@ -80,7 +65,7 @@ describe('ToolHandler', () => {
     } as unknown as StateManager;
 
     // Mock StateManager.getInstance
-    jest.spyOn(StateManager, 'getInstance').mockReturnValue(mockStateManager);
+    jest.spyOn(StateManager, 'getInstance').mockResolvedValue(mockStateManager);
 
     // Create ToolHandler instance with services
     toolHandler = new ToolHandler(
@@ -88,6 +73,9 @@ describe('ToolHandler', () => {
       mockEncryptionService,
       mockAuthService
     );
+
+    // Initialize the tool handler
+    await toolHandler.initialize();
   });
 
   afterAll(async () => {

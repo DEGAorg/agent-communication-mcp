@@ -29,19 +29,21 @@ async function createEncryptionDirectory(projectRoot: string): Promise<void> {
     fs.mkdirSync(storageDir, { recursive: true, mode: 0o755 });
   }
 
-  const fileManager = FileManager.getInstance({ baseDir: storageDir });
+  // Initialize FileManager with the correct base directory
+  FileManager.getInstance({ baseDir: storageDir });
   
   // Create all required directories
   const directories = [
     FileType.ENCRYPTION,
     FileType.SERVICE_CONTENT,
-    FileType.RECEIVED_CONTENT
+    FileType.RECEIVED_CONTENT,
+    FileType.AUTH
   ];
 
   for (const dirType of directories) {
-    const dirPath = fileManager.getPath(dirType, '');
+    const dirPath = FileManager.getInstance().getPath(dirType, '');
     try {
-      fileManager.ensureDirectoryExists(dirPath);
+      FileManager.getInstance().ensureDirectoryExists(dirPath);
       console.log(chalk.cyan(`Created ${dirType} directory...`));
     } catch (error) {
       console.error(chalk.red(`Failed to create ${dirType} directory ${dirPath}:`), error);
@@ -55,28 +57,18 @@ async function generateAndSaveKeys(agentId: string, projectRoot: string): Promis
     // Generate key pair using the KeyPairGenerator class
     const { publicKey, privateKey } = KeyPairGenerator.generateKeyPair();
     const storageDir = path.join(projectRoot, '.storage');
-    const fileManager = FileManager.getInstance({ baseDir: storageDir });
     
-    // Get encryption directory path
-    const encryptionDir = fileManager.getPath(FileType.ENCRYPTION, '');
+    // Ensure FileManager is using the correct base directory
+    FileManager.getInstance({ baseDir: storageDir });
     
-    // Create agent-specific directory
-    const agentDir = path.join(encryptionDir, agentId);
-    if (!fs.existsSync(agentDir)) {
-      fs.mkdirSync(agentDir, { recursive: true, mode: 0o700 });
-    }
-
-    // Save keys to files
-    const publicKeyPath = path.join(agentDir, 'public.key');
-    const privateKeyPath = path.join(agentDir, 'private.key');
-
-    fs.writeFileSync(publicKeyPath, publicKey, { mode: 0o600 });
-    fs.writeFileSync(privateKeyPath, privateKey, { mode: 0o600 });
+    // Save keys using FileManager
+    FileManager.getInstance().writeFile(FileType.ENCRYPTION, agentId, publicKey, 'public.key');
+    FileManager.getInstance().writeFile(FileType.ENCRYPTION, agentId, privateKey, 'private.key');
 
     console.log(chalk.green('\n✅ Encryption keys generated and saved successfully!'));
     console.log(chalk.yellow('\nKey files:'));
-    console.log(chalk.white(`Public key: ${publicKeyPath}`));
-    console.log(chalk.white(`Private key: ${privateKeyPath}`));
+    console.log(chalk.white(`Public key: ${FileManager.getInstance().getPath(FileType.ENCRYPTION, agentId, 'public.key')}`));
+    console.log(chalk.white(`Private key: ${FileManager.getInstance().getPath(FileType.ENCRYPTION, agentId, 'private.key')}`));
   } catch (error) {
     console.error(chalk.red('\nError: Failed to generate and save keys:'));
     console.error(chalk.red(error));

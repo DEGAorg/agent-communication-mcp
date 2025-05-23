@@ -6,7 +6,7 @@ export class SeedManager {
   /**
    * Initialize the SeedManager with a custom storage path
    */
-  static initialize(storagePath: string = './storage'): void {
+  static initialize(storagePath: string = '.storage'): void {
     this.fileManager = FileManager.getInstance({
       baseDir: storagePath,
       dirMode: 0o700,  // More restrictive for seed directories

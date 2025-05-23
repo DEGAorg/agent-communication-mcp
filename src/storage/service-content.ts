@@ -6,111 +6,93 @@ export interface ServiceContent {
   agent_id: string;
   content: Record<string, any>;
   version: string;
-  tags: string[];
-  created_at: string;
-  updated_at: string;
+  tags?: string[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export class ServiceContentStorage {
   private static instance: ServiceContentStorage;
-  private readonly fileManager: FileManager;
+  private fileManager: FileManager;
 
   private constructor() {
     this.fileManager = FileManager.getInstance();
   }
 
-  static getInstance(): ServiceContentStorage {
+  public static getInstance(): ServiceContentStorage {
     if (!ServiceContentStorage.instance) {
       ServiceContentStorage.instance = new ServiceContentStorage();
     }
     return ServiceContentStorage.instance;
   }
 
-  private getContentPath(serviceId: string, version: string): string {
-    return `${version}.json`;
+  /**
+   * Store service content
+   */
+  public async storeContent(content: ServiceContent): Promise<ServiceContent> {
+    const filename = `${content.service_id}_${content.version}.json`;
+    const timestamp = new Date().toISOString();
+    
+    const contentToStore = {
+      ...content,
+      created_at: timestamp,
+      updated_at: timestamp
+    };
+
+    this.fileManager.writeFile(
+      FileType.SERVICE_CONTENT,
+      content.agent_id,
+      JSON.stringify(contentToStore, null, 2),
+      filename
+    );
+
+    return contentToStore;
   }
 
-  async storeContent(content: Omit<ServiceContent, 'created_at' | 'updated_at'>): Promise<ServiceContent> {
-    try {
-      const timestamp = new Date().toISOString();
-      const serviceContent: ServiceContent = {
-        ...content,
-        created_at: timestamp,
-        updated_at: timestamp
-      };
-
-      const contentPath = this.getContentPath(content.service_id, content.version);
-      this.fileManager.writeFile(
-        FileType.SERVICE_CONTENT,
-        content.service_id,
-        JSON.stringify(serviceContent, null, 2),
-        contentPath
-      );
-
-      logger.info(`Service content stored for service ${content.service_id}, version ${content.version}`);
-      return serviceContent;
-    } catch (error) {
-      logger.error('Error storing service content:', error);
-      throw error;
-    }
-  }
-
-  async getContent(serviceId: string, version?: string): Promise<ServiceContent | null> {
-    try {
-      if (version) {
-        const contentPath = this.getContentPath(serviceId, version);
-        if (!this.fileManager.fileExists(FileType.SERVICE_CONTENT, serviceId, contentPath)) {
-          return null;
-        }
-        const content = this.fileManager.readFile(FileType.SERVICE_CONTENT, serviceId, contentPath);
+  /**
+   * Retrieve service content
+   * If version is not provided, returns the latest version
+   */
+  public async getContent(agentId: string, serviceId: string, version?: string): Promise<ServiceContent | null> {
+    if (version) {
+      const filename = `${serviceId}_${version}.json`;
+      try {
+        const content = this.fileManager.readFile(
+          FileType.SERVICE_CONTENT,
+          agentId,
+          filename
+        );
         return JSON.parse(content);
-      } else {
-        // Get the latest version
-        const files = this.fileManager.listFiles(FileType.SERVICE_CONTENT, serviceId);
-        const versions = files
-          .filter(f => f.endsWith('.json'))
-          .map(f => f.replace('.json', ''))
-          .sort()
-          .reverse();
-
-        if (versions.length === 0) {
-          return null;
-        }
-
-        const contentPath = this.getContentPath(serviceId, versions[0]);
-        const content = this.fileManager.readFile(FileType.SERVICE_CONTENT, serviceId, contentPath);
-        return JSON.parse(content);
+      } catch (error) {
+        return null;
       }
-    } catch (error) {
-      logger.error('Error getting service content:', error);
-      throw error;
+    } else {
+      // Get the latest version
+      const versions = await this.listContentVersions(agentId, serviceId);
+      if (versions.length === 0) {
+        return null;
+      }
+      // Sort versions in descending order and get the latest
+      const latestVersion = versions.sort().reverse()[0];
+      return this.getContent(agentId, serviceId, latestVersion);
     }
   }
 
-  async listVersions(serviceId: string): Promise<string[]> {
-    try {
-      const files = this.fileManager.listFiles(FileType.SERVICE_CONTENT, serviceId);
-      return files
-        .filter(f => f.endsWith('.json'))
-        .map(f => f.replace('.json', ''))
-        .sort()
-        .reverse();
-    } catch (error) {
-      logger.error('Error listing service content versions:', error);
-      throw error;
-    }
+  /**
+   * List all content versions for a service
+   */
+  public async listContentVersions(agentId: string, serviceId: string): Promise<string[]> {
+    const files = this.fileManager.listFiles(FileType.SERVICE_CONTENT, agentId);
+    return files
+      .filter(file => file.startsWith(`${serviceId}_`) && file.endsWith('.json'))
+      .map(file => file.replace(`${serviceId}_`, '').replace('.json', ''));
   }
 
-  async deleteContent(serviceId: string, version: string): Promise<void> {
-    try {
-      const contentPath = this.getContentPath(serviceId, version);
-      if (this.fileManager.fileExists(FileType.SERVICE_CONTENT, serviceId, contentPath)) {
-        this.fileManager.deleteFile(FileType.SERVICE_CONTENT, serviceId, contentPath);
-        logger.info(`Service content deleted for service ${serviceId}, version ${version}`);
-      }
-    } catch (error) {
-      logger.error('Error deleting service content:', error);
-      throw error;
-    }
+  /**
+   * Delete service content
+   */
+  public async deleteContent(agentId: string, serviceId: string, version: string): Promise<void> {
+    const filename = `${serviceId}_${version}.json`;
+    this.fileManager.deleteFile(FileType.SERVICE_CONTENT, agentId, filename);
   }
 } 

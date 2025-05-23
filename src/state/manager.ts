@@ -42,12 +42,17 @@ export class StateManager {
     this.receivedContentStorage = receivedContentStorage;
   }
 
-  static getInstance(): StateManager {
+  static async getInstance(): Promise<StateManager> {
     if (!StateManager.instance) {
       // Create service instances
       const authService = AuthService.getInstance();
       const supabaseService = SupabaseService.getInstance();
       const messageHandler = MessageHandler.getInstance();
+      
+      // Initialize KeyManager with the correct path
+      const { KeyManager } = await import('../utils/key-manager.js');
+      KeyManager.initialize('.storage');
+      
       const encryptionService = new EncryptionService(config.agentId);
       const receivedContentStorage = ReceivedContentStorage.getInstance();
 
@@ -206,90 +211,69 @@ export class StateManager {
         throw error;
       }
 
-      // Start authentication process
-      this.setState(SystemState.AUTHENTICATING);
+      // Check if we have an existing session
+      const session = await this.authService.getSession();
       
-      // First try to get existing session
-      let session = await this.authService.getSession();
-      
-      // If no valid session, we need to wait for OTP flow
-      if (!session) {
-        // Wait for authentication to complete
-        const email = process.env.MCP_AUTH_EMAIL;
-        if (!email) {
-          throw new Error('MCP_AUTH_EMAIL environment variable is required');
+      if (session) {
+        // We have a valid session, proceed with initialization
+        this.setState(SystemState.AUTHENTICATED);
+
+        // Set up realtime subscriptions after authentication
+        try {
+          await this.supabaseService.setupRealtimeSubscriptions();
+        } catch (error) {
+          logger.error({
+            msg: 'Failed to setup realtime subscriptions',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            details: error instanceof Error ? error.stack : String(error),
+            context: {
+              operation: 'realtime_setup',
+              state: this.currentState,
+              timestamp: new Date().toISOString()
+            }
+          });
+          throw error;
+        }
+
+        // Check agent registration
+        this.setState(SystemState.REGISTERING);
+        const agentId = this.authService.getCurrentUserId();
+        if (!agentId) {
+          throw new Error('No authenticated agent found');
+        }
+
+        // Verify agent is registered (AuthService should have handled registration)
+        const agent = await this.supabaseService.getAgent(agentId);
+        if (!agent) {
+          throw new Error('Agent registration failed - please check logs for details');
         }
         
-        // Start OTP flow and wait for it to complete
-        await this.authService.signInWithOtp(email);
-        
-        // Wait for session to be established
-        let attempts = 0;
-        const maxAttempts = 10;
-        while (!session && attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-          session = await this.authService.getSession();
-          attempts++;
+        this.setState(SystemState.REGISTERED);
+
+        // System is ready
+        this.setState(SystemState.READY);
+        logger.info('All services initialized successfully');
+
+        // Process any unread messages that arrived while offline
+        try {
+          await this.processUnreadMessages();
+        } catch (error) {
+          logger.error({
+            msg: 'Failed to process unread messages',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            details: error instanceof Error ? error.stack : String(error),
+            context: {
+              operation: 'unread_messages',
+              state: this.currentState,
+              timestamp: new Date().toISOString()
+            }
+          });
+          // Don't throw here - we want to continue initialization even if message processing fails
         }
-        
-        if (!session) {
-          throw new Error('Authentication timed out - please check your email for OTP code');
-        }
-      }
-      
-      this.setState(SystemState.AUTHENTICATED);
-
-      // Set up realtime subscriptions after authentication
-      try {
-        await this.supabaseService.setupRealtimeSubscriptions();
-      } catch (error) {
-        logger.error({
-          msg: 'Failed to setup realtime subscriptions',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          details: error instanceof Error ? error.stack : String(error),
-          context: {
-            operation: 'realtime_setup',
-            state: this.currentState,
-            timestamp: new Date().toISOString()
-          }
-        });
-        throw error;
-      }
-
-      // Check agent registration
-      this.setState(SystemState.REGISTERING);
-      const agentId = this.authService.getCurrentUserId();
-      if (!agentId) {
-        throw new Error('No authenticated agent found');
-      }
-
-      // Verify agent is registered (AuthService should have handled registration)
-      const agent = await this.supabaseService.getAgent(agentId);
-      if (!agent) {
-        throw new Error('Agent registration failed - please check logs for details');
-      }
-      
-      this.setState(SystemState.REGISTERED);
-
-      // System is ready
-      this.setState(SystemState.READY);
-      logger.info('All services initialized successfully');
-
-      // Process any unread messages that arrived while offline
-      try {
-        await this.processUnreadMessages();
-      } catch (error) {
-        logger.error({
-          msg: 'Failed to process unread messages',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          details: error instanceof Error ? error.stack : String(error),
-          context: {
-            operation: 'unread_messages',
-            state: this.currentState,
-            timestamp: new Date().toISOString()
-          }
-        });
-        // Don't throw here - we want to continue initialization even if message processing fails
+      } else {
+        // No valid session, system is ready but needs authentication
+        this.setState(SystemState.READY);
+        logger.info('System initialized but requires authentication');
       }
     } catch (error) {
       logger.error({

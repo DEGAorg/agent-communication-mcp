@@ -1,27 +1,22 @@
 import { supabase } from './config.js';
 import { logger } from '../logger.js';
-import * as fs from 'fs';
-import * as path from 'path';
 import { SupabaseService } from './service.js';
+import { FileManager, FileType } from '../utils/file-manager.js';
 
 export class AuthService {
   private static instance: AuthService;
   private currentSession: any = null;
-  private readonly SESSION_FILE: string;
   private isInitializing: boolean = false;
   private renewalInterval: NodeJS.Timeout | null = null;
   private supabaseService: SupabaseService | null = null;
+  private fileManager: FileManager;
 
   private constructor() {
-    // Set up session file path in project root
-    const projectRoot = process.cwd();
-    const sessionDir = path.join(projectRoot, 'session');
-    this.SESSION_FILE = path.join(sessionDir, 'auth.json');
-    
-    // Ensure session directory exists
-    if (!fs.existsSync(sessionDir)) {
-      fs.mkdirSync(sessionDir, { mode: 0o700 }); // Secure directory permissions
-    }
+    // Initialize FileManager with secure permissions
+    this.fileManager = FileManager.getInstance({
+      dirMode: 0o700,  // More restrictive for auth directories
+      fileMode: 0o600  // More restrictive for auth files
+    });
   }
 
   static getInstance(): AuthService {
@@ -40,8 +35,8 @@ export class AuthService {
    * This should be called before any other operations
    */
   async initialize(): Promise<void> {
-    // Initialize session
-    await this.initializeFromEnv();
+    // Try to load existing session
+    await this.loadSession();
     
     // Start periodic session renewal check
     this.startSessionRenewalCheck();
@@ -77,50 +72,23 @@ export class AuthService {
     }
   }
 
-  private async initializeFromEnv() {
-    const email = process.env.MCP_AUTH_EMAIL;
-    if (!email) {
-      throw new Error('MCP_AUTH_EMAIL environment variable is required');
-    }
-
-    // Try to load existing session
-    const hasValidSession = await this.loadSession();
-    if (hasValidSession) {
-      logger.info('Found and loaded existing valid session');
-      return;
-    }
-
-    logger.info('No valid session found. Starting new authentication flow...');
-    // If no valid session and not already initializing, start OTP flow
-    if (!this.isInitializing) {
-      try {
-        this.isInitializing = true;
-        await this.signInWithOtp(email);
-        // Note: We don't set isInitializing to false here because we need to wait for OTP verification
-        // The flag will be cleared in verifyOtp after successful authentication
-      } catch (error) {
-        this.isInitializing = false;
-        throw error;
-      }
-    }
-  }
-
   /**
    * Loads the session from persistent storage
    * @returns true if a valid session was loaded, false otherwise
    */
   private async loadSession(): Promise<boolean> {
     try {
-      if (!fs.existsSync(this.SESSION_FILE)) {
-        logger.info('No session file found');
+      const agentId = process.env.AGENT_ID || 'default';
+      if (!this.fileManager.fileExists(FileType.AUTH, agentId, 'session.json')) {
+        logger.info('No session file found - authentication required');
         return false;
       }
 
-      const sessionData = JSON.parse(fs.readFileSync(this.SESSION_FILE, 'utf8'));
+      const sessionData = JSON.parse(this.fileManager.readFile(FileType.AUTH, agentId, 'session.json'));
       
       // Validate session data
       if (!sessionData?.access_token || !sessionData?.refresh_token) {
-        logger.info('Session file exists but contains invalid data');
+        logger.info('Session file exists but contains invalid data - authentication required');
         return false;
       }
 
@@ -131,11 +99,12 @@ export class AuthService {
       });
 
       if (error || !session) {
-        logger.info('Failed to restore session from file');
+        logger.info('Failed to restore session from file - authentication required');
         return false;
       }
 
       this.currentSession = session;
+      logger.info('Successfully loaded existing session');
 
       // Register agent if needed
       await this.registerAgent();
@@ -156,16 +125,19 @@ export class AuthService {
         return;
       }
 
+      const agentId = process.env.AGENT_ID || 'default';
       const sessionData = {
         access_token: this.currentSession.access_token,
         refresh_token: this.currentSession.refresh_token,
         expires_at: this.currentSession.expires_at
       };
 
-      // Write session data with secure permissions
-      fs.writeFileSync(this.SESSION_FILE, JSON.stringify(sessionData), {
-        mode: 0o600 // Secure file permissions
-      });
+      this.fileManager.writeFile(
+        FileType.AUTH,
+        agentId,
+        JSON.stringify(sessionData),
+        'session.json'
+      );
     } catch (error) {
       logger.error('Failed to save session:', error);
     }

@@ -189,7 +189,7 @@ export const ALL_TOOLS = [
 ];
 
 export class ToolHandler {
-  private stateManager: StateManager | null;
+  private stateManager: StateManager | null = null;
   private readonly supabaseService: SupabaseService;
   private readonly authService: AuthService;
 
@@ -198,9 +198,16 @@ export class ToolHandler {
     private readonly encryptionService: EncryptionService,
     authService: AuthService = AuthService.getInstance()
   ) {
-    this.stateManager = StateManager.getInstance();
     this.supabaseService = supabaseService;
     this.authService = authService;
+  }
+
+  /**
+   * Initialize the tool handler
+   * This must be called after construction to set up the state manager
+   */
+  async initialize(): Promise<void> {
+    this.stateManager = await StateManager.getInstance();
   }
 
   /**
@@ -212,8 +219,19 @@ export class ToolHandler {
 
   async handleToolCall(toolName: string, toolArgs: any): Promise<any> {
     try {
+      // Ensure state manager is initialized
+      if (!this.stateManager) {
+        await this.initialize();
+      }
+
       // Ensure system is ready before handling any tool calls, with recovery attempt
-      await this.stateManager?.ensureReadyWithRecovery();
+      if (!this.stateManager) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          'Failed to initialize state manager'
+        );
+      }
+      await this.stateManager.ensureReadyWithRecovery();
 
       switch (toolName) {
         case 'login':

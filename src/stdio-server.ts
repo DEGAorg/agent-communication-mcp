@@ -35,7 +35,7 @@ export async function createServer() {
   logger.info('Creating Agent Communication MCP server');
 
   // Initialize state manager (which handles all service initialization)
-  const stateManager = StateManager.getInstance();
+  const stateManager = await StateManager.getInstance();
   await stateManager.initialize();
 
   const toolHandler = new ToolHandler(
@@ -43,6 +43,9 @@ export async function createServer() {
     stateManager.getEncryptionService(),
     stateManager.getAuthService()
   );
+
+  // Initialize the tool handler
+  await toolHandler.initialize();
 
   // Create server instance
   const server = new Server(

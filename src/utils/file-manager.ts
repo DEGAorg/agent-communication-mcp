@@ -12,7 +12,9 @@ export enum FileType {
   ENCRYPTION = 'encryption',
   // Content types
   SERVICE_CONTENT = 'service-content', // For content provided by services
-  RECEIVED_CONTENT = 'received-content' // For content received from services
+  RECEIVED_CONTENT = 'received-content', // For content received from services
+  // Auth
+  AUTH = 'auth'
 }
 
 /**
@@ -21,7 +23,7 @@ export enum FileType {
 export interface FileConfig {
   /**
    * Base directory for all files
-   * @default './storage'
+   * @default '.storage'
    */
   baseDir?: string;
   
@@ -73,6 +75,12 @@ export class FileManager {
   public static getInstance(config?: FileConfig): FileManager {
     if (!FileManager.instance) {
       FileManager.instance = new FileManager(config);
+    } else if (config) {
+      // Update configuration if provided
+      FileManager.instance.config = {
+        ...FileManager.instance.config,
+        ...config
+      };
     }
     return FileManager.instance;
   }
@@ -102,7 +110,8 @@ export class FileManager {
       [FileType.TRANSACTION_DB]: 'transaction-db',
       [FileType.ENCRYPTION]: 'encryption',
       [FileType.SERVICE_CONTENT]: 'service-contents',
-      [FileType.RECEIVED_CONTENT]: 'received-contents'
+      [FileType.RECEIVED_CONTENT]: 'received-contents',
+      [FileType.AUTH]: 'auth'
     };
     
     return path.join(this.config.baseDir, typeDirs[fileType]);

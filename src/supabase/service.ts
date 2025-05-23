@@ -564,9 +564,9 @@ export class SupabaseService {
       await receivedContentStorage.storeContent({
         payment_message_id: paymentMessageId,
         service_id: serviceId,
+        agent_id: this.getCurrentAgentId(),
         content: contentData,
-        version,
-        tags: ['received']
+        version
       });
 
       return {

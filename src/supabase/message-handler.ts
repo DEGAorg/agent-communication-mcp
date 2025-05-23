@@ -153,9 +153,9 @@ export class MessageHandler {
     await this.receivedContentStorage!.storeContent({
       payment_message_id: message.parent_message_id!,
       service_id: serviceId,
+      agent_id: message.recipient_agent_id,
       content: contentData,
-      version,
-      tags: ['received']
+      version
     });
 
     // Mark message as read after successful processing
@@ -187,7 +187,7 @@ export class MessageHandler {
 
     // Get the stored service content
     const serviceContentStorage = ServiceContentStorage.getInstance();
-    const serviceContent = await serviceContentStorage.getContent(serviceId);
+    const serviceContent = await serviceContentStorage.getContent(service.agent_id, serviceId);
     
     if (!serviceContent) {
       throw new Error(`No content found for service ${serviceId}`);
