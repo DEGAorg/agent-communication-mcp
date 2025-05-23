@@ -61,7 +61,7 @@ export class FileManager {
   
   private constructor(config: FileConfig = {}) {
     this.config = {
-      baseDir: config.baseDir || './storage',
+      baseDir: config.baseDir || '.storage',
       createDirs: config.createDirs ?? true,
       dirMode: config.dirMode || 0o755,
       fileMode: config.fileMode || 0o644,
