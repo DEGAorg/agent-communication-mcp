@@ -16,6 +16,7 @@ import { logger } from './logger.js';
 import { ToolHandler } from './tools.js';
 import { StateManager } from './state/manager.js';
 import { handleListResources, handleReadResource } from './resources.js';
+import { AuthService } from './supabase/auth.js';
 
 /**
  * Format error for logging
@@ -120,6 +121,27 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
       const toolArgs = request.params.arguments;
 
       logger.info(`Tool call received: ${toolName}`);
+      
+      // Check if tool requires authentication
+      const authRequiredTools = [
+        'listServices',
+        'registerService',
+        'storeServiceContent',
+        'servicePayment',
+        'queryServiceDelivery',
+        'provideServiceFeedback'
+      ];
+
+      if (authRequiredTools.includes(toolName)) {
+        const authService = AuthService.getInstance();
+        if (!authService.isAuthenticated()) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            'Authentication required. Please use the login tool to authenticate first.'
+          );
+        }
+      }
+
       return await toolHandler.handleToolCall(toolName, toolArgs);
     } catch (error) {
       return handleError('handling tool call', error);

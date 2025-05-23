@@ -12,6 +12,28 @@ import { ServiceContentStorage } from './storage/service-content.js';
 // Define tools with their schemas
 export const ALL_TOOLS = [
   {
+    name: 'login',
+    description: 'Login or register with email authentication. This tool handles both first-time registration and subsequent logins. For first-time users, it will send a registration confirmation email. For existing users, it will send an OTP code. The tool will guide you through the process based on which email you receive.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        email: {
+          type: 'string',
+          description: 'Email address to login/register with'
+        },
+        otpCode: {
+          type: 'string',
+          description: 'Optional 6-digit verification code received via email. Only provide this if you received an OTP code.'
+        },
+        registrationConfirmed: {
+          type: 'boolean',
+          description: 'Set to true if you received and accepted the registration confirmation email. This will trigger the OTP code to be sent.'
+        }
+      },
+      required: ['email']
+    }
+  },
+  {
     name: 'listServices',
     description: 'Retrieve a list of available services in the marketplace with optional filtering by topics or interests. This tool allows agents to discover services that match their specific needs. You can filter services by topics, price range, or service type. Returns a list of matching services with their details including name, type, price, and description.',
     inputSchema: {
@@ -194,6 +216,9 @@ export class ToolHandler {
       await this.stateManager?.ensureReadyWithRecovery();
 
       switch (toolName) {
+        case 'login':
+          return await this.handleLogin(toolArgs);
+        
         case 'listServices':
           return await this.handleListServices(toolArgs);
         
@@ -243,6 +268,113 @@ export class ToolHandler {
       throw new McpError(
         ErrorCode.InternalError,
         `Error handling tool call for ${toolName}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private async handleLogin(args: { email: string; otpCode?: string; registrationConfirmed?: boolean }) {
+    try {
+      const { email, otpCode, registrationConfirmed } = args;
+      
+      // Validate email format
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'Invalid email format'
+        );
+      }
+
+      // If OTP code is provided, verify it
+      if (otpCode) {
+        // Validate code format
+        if (!/^\d{6}$/.test(otpCode)) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            'Invalid verification code format. Must be 6 digits.'
+          );
+        }
+
+        // Verify OTP
+        await this.authService.verifyOtp(email, otpCode);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'success',
+                message: 'Login completed successfully'
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      }
+
+      // If registration was confirmed, send OTP
+      if (registrationConfirmed) {
+        await this.authService.signInWithOtp(email);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'success',
+                message: 'OTP code sent to your email. Please use the login tool again with the OTP code.',
+                email
+              }, null, 2),
+              mimeType: 'application/json'
+            }
+          ]
+        };
+      }
+
+      // Initial login attempt - will trigger either registration confirmation or OTP
+      await this.authService.signInWithOtp(email);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'pending',
+              message: 'Please check your email. You will receive either:',
+              instructions: [
+                '1. A registration confirmation email (if this is your first time)',
+                '2. An OTP code email (if you are already registered)',
+                '',
+                'If you receive a registration confirmation:',
+                '- Accept the registration by clicking the link in the email',
+                '- Wait 2 minutes for the system to process your registration',
+                '- Attempt login again with registrationConfirmed=true',
+                '',
+                'If you receive an OTP code:',
+                '- Please provide the 6-digit code and we will complete the login process'
+              ],
+              email
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error({
+        msg: 'Error during login/registration',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          email: args.email,
+          hasOtpCode: !!args.otpCode,
+          registrationConfirmed: args.registrationConfirmed,
+          timestamp: new Date().toISOString()
+        }
+      });
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to process login/registration: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
