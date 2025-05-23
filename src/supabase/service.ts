@@ -14,6 +14,7 @@ import {
 } from './message-types.js';
 import { ReceivedContentStorage } from '../storage/received-content.js';
 import { EncryptionService } from '../encryption/service.js';
+import { config } from '../config.js';
 
 export class SupabaseService {
   private static instance: SupabaseService;
@@ -541,7 +542,7 @@ export class SupabaseService {
         const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
 
         // Decrypt the content
-        const encryptionService = new EncryptionService();
+        const encryptionService = new EncryptionService(config.agentId);
         const { publicMessage } = await encryptionService.decryptMessageAndCheckType(
           deliveryMessage.private.encryptedMessage!,
           deliveryMessage.private.encryptedKeys!.recipient,

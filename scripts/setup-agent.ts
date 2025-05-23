@@ -31,13 +31,22 @@ async function createEncryptionDirectory(projectRoot: string): Promise<void> {
 
   const fileManager = FileManager.getInstance({ baseDir: storageDir });
   
-  // Create encryption directory
-  const encryptionDir = fileManager.getPath(FileType.ENCRYPTION, '');
-  try {
-    fileManager.ensureDirectoryExists(encryptionDir);
-  } catch (error) {
-    console.error(chalk.red(`Failed to create encryption directory ${encryptionDir}:`), error);
-    throw error;
+  // Create all required directories
+  const directories = [
+    FileType.ENCRYPTION,
+    FileType.SERVICE_CONTENT,
+    FileType.RECEIVED_CONTENT
+  ];
+
+  for (const dirType of directories) {
+    const dirPath = fileManager.getPath(dirType, '');
+    try {
+      fileManager.ensureDirectoryExists(dirPath);
+      console.log(chalk.cyan(`Created ${dirType} directory...`));
+    } catch (error) {
+      console.error(chalk.red(`Failed to create ${dirType} directory ${dirPath}:`), error);
+      throw error;
+    }
   }
 }
 

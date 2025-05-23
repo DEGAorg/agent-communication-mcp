@@ -1,6 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { logger } from '../logger.js';
+import { FileManager, FileType } from '../utils/file-manager.js';
 
 export interface ServiceContent {
   service_id: string;
@@ -14,17 +13,10 @@ export interface ServiceContent {
 
 export class ServiceContentStorage {
   private static instance: ServiceContentStorage;
-  private readonly storageDir: string;
+  private readonly fileManager: FileManager;
 
   private constructor() {
-    // Set up storage directory in project root
-    const projectRoot = process.cwd();
-    this.storageDir = path.join(projectRoot, 'storage', 'service-contents');
-    
-    // Ensure storage directory exists
-    if (!fs.existsSync(this.storageDir)) {
-      fs.mkdirSync(this.storageDir, { recursive: true, mode: 0o700 }); // Secure directory permissions
-    }
+    this.fileManager = FileManager.getInstance();
   }
 
   static getInstance(): ServiceContentStorage {
@@ -34,16 +26,8 @@ export class ServiceContentStorage {
     return ServiceContentStorage.instance;
   }
 
-  private getServiceDir(serviceId: string): string {
-    const serviceDir = path.join(this.storageDir, serviceId);
-    if (!fs.existsSync(serviceDir)) {
-      fs.mkdirSync(serviceDir, { recursive: true, mode: 0o700 });
-    }
-    return serviceDir;
-  }
-
   private getContentPath(serviceId: string, version: string): string {
-    return path.join(this.getServiceDir(serviceId), `${version}.json`);
+    return `${version}.json`;
   }
 
   async storeContent(content: Omit<ServiceContent, 'created_at' | 'updated_at'>): Promise<ServiceContent> {
@@ -56,10 +40,11 @@ export class ServiceContentStorage {
       };
 
       const contentPath = this.getContentPath(content.service_id, content.version);
-      await fs.promises.writeFile(
-        contentPath,
+      this.fileManager.writeFile(
+        FileType.SERVICE_CONTENT,
+        content.service_id,
         JSON.stringify(serviceContent, null, 2),
-        { mode: 0o600 } // Secure file permissions
+        contentPath
       );
 
       logger.info(`Service content stored for service ${content.service_id}, version ${content.version}`);
@@ -72,22 +57,16 @@ export class ServiceContentStorage {
 
   async getContent(serviceId: string, version?: string): Promise<ServiceContent | null> {
     try {
-      const serviceDir = this.getServiceDir(serviceId);
-      const files = await fs.promises.readdir(serviceDir);
-
-      if (files.length === 0) {
-        return null;
-      }
-
       if (version) {
         const contentPath = this.getContentPath(serviceId, version);
-        if (!fs.existsSync(contentPath)) {
+        if (!this.fileManager.fileExists(FileType.SERVICE_CONTENT, serviceId, contentPath)) {
           return null;
         }
-        const content = await fs.promises.readFile(contentPath, 'utf-8');
+        const content = this.fileManager.readFile(FileType.SERVICE_CONTENT, serviceId, contentPath);
         return JSON.parse(content);
       } else {
         // Get the latest version
+        const files = this.fileManager.listFiles(FileType.SERVICE_CONTENT, serviceId);
         const versions = files
           .filter(f => f.endsWith('.json'))
           .map(f => f.replace('.json', ''))
@@ -99,7 +78,7 @@ export class ServiceContentStorage {
         }
 
         const contentPath = this.getContentPath(serviceId, versions[0]);
-        const content = await fs.promises.readFile(contentPath, 'utf-8');
+        const content = this.fileManager.readFile(FileType.SERVICE_CONTENT, serviceId, contentPath);
         return JSON.parse(content);
       }
     } catch (error) {
@@ -110,9 +89,7 @@ export class ServiceContentStorage {
 
   async listVersions(serviceId: string): Promise<string[]> {
     try {
-      const serviceDir = this.getServiceDir(serviceId);
-      const files = await fs.promises.readdir(serviceDir);
-      
+      const files = this.fileManager.listFiles(FileType.SERVICE_CONTENT, serviceId);
       return files
         .filter(f => f.endsWith('.json'))
         .map(f => f.replace('.json', ''))
@@ -127,8 +104,8 @@ export class ServiceContentStorage {
   async deleteContent(serviceId: string, version: string): Promise<void> {
     try {
       const contentPath = this.getContentPath(serviceId, version);
-      if (fs.existsSync(contentPath)) {
-        await fs.promises.unlink(contentPath);
+      if (this.fileManager.fileExists(FileType.SERVICE_CONTENT, serviceId, contentPath)) {
+        this.fileManager.deleteFile(FileType.SERVICE_CONTENT, serviceId, contentPath);
         logger.info(`Service content deleted for service ${serviceId}, version ${version}`);
       }
     } catch (error) {

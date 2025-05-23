@@ -1,6 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { logger } from '../logger.js';
+import { FileManager, FileType } from '../utils/file-manager.js';
 
 export interface ReceivedContent {
   payment_message_id: string;
@@ -14,17 +13,10 @@ export interface ReceivedContent {
 
 export class ReceivedContentStorage {
   private static instance: ReceivedContentStorage;
-  private readonly storageDir: string;
+  private readonly fileManager: FileManager;
 
   private constructor() {
-    // Set up storage directory in project root
-    const projectRoot = process.cwd();
-    this.storageDir = path.join(projectRoot, 'storage', 'received-contents');
-    
-    // Ensure storage directory exists
-    if (!fs.existsSync(this.storageDir)) {
-      fs.mkdirSync(this.storageDir, { recursive: true, mode: 0o700 }); // Secure directory permissions
-    }
+    this.fileManager = FileManager.getInstance();
   }
 
   static getInstance(): ReceivedContentStorage {
@@ -34,16 +26,8 @@ export class ReceivedContentStorage {
     return ReceivedContentStorage.instance;
   }
 
-  private getAgentDir(agentId: string): string {
-    const agentDir = path.join(this.storageDir, agentId);
-    if (!fs.existsSync(agentDir)) {
-      fs.mkdirSync(agentDir, { recursive: true, mode: 0o700 });
-    }
-    return agentDir;
-  }
-
-  private getContentPath(agentId: string, paymentMessageId: string): string {
-    return path.join(this.getAgentDir(agentId), `${paymentMessageId}.json`);
+  private getContentPath(serviceId: string, paymentMessageId: string): string {
+    return `${paymentMessageId}.json`;
   }
 
   async storeContent(content: Omit<ReceivedContent, 'created_at' | 'updated_at'>): Promise<ReceivedContent> {
@@ -56,10 +40,11 @@ export class ReceivedContentStorage {
       };
 
       const contentPath = this.getContentPath(content.service_id, content.payment_message_id);
-      await fs.promises.writeFile(
-        contentPath,
+      this.fileManager.writeFile(
+        FileType.RECEIVED_CONTENT,
+        content.service_id,
         JSON.stringify(receivedContent, null, 2),
-        { mode: 0o600 } // Secure file permissions
+        contentPath
       );
 
       logger.info(`Received content stored for payment message ${content.payment_message_id}`);
@@ -73,11 +58,11 @@ export class ReceivedContentStorage {
   async getContent(serviceId: string, paymentMessageId: string): Promise<ReceivedContent | null> {
     try {
       const contentPath = this.getContentPath(serviceId, paymentMessageId);
-      if (!fs.existsSync(contentPath)) {
+      if (!this.fileManager.fileExists(FileType.RECEIVED_CONTENT, serviceId, contentPath)) {
         return null;
       }
 
-      const content = await fs.promises.readFile(contentPath, 'utf-8');
+      const content = this.fileManager.readFile(FileType.RECEIVED_CONTENT, serviceId, contentPath);
       return JSON.parse(content);
     } catch (error) {
       logger.error('Error getting received content:', error);
@@ -85,11 +70,11 @@ export class ReceivedContentStorage {
     }
   }
 
-  async deleteContent(agentId: string, paymentMessageId: string): Promise<void> {
+  async deleteContent(serviceId: string, paymentMessageId: string): Promise<void> {
     try {
-      const contentPath = this.getContentPath(agentId, paymentMessageId);
-      if (fs.existsSync(contentPath)) {
-        await fs.promises.unlink(contentPath);
+      const contentPath = this.getContentPath(serviceId, paymentMessageId);
+      if (this.fileManager.fileExists(FileType.RECEIVED_CONTENT, serviceId, contentPath)) {
+        this.fileManager.deleteFile(FileType.RECEIVED_CONTENT, serviceId, contentPath);
         logger.info(`Received content deleted for payment message ${paymentMessageId}`);
       }
     } catch (error) {

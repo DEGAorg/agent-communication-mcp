@@ -6,6 +6,7 @@ import { ToolHandler } from '../tools.js';
 import { SupabaseService } from '../supabase/service.js';
 import { EncryptionService } from '../encryption/service.js';
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
+import { config } from '../config.js';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -81,7 +82,7 @@ async function registerService(useTestService: boolean = false) {
 
     // Initialize services
     const supabaseService = SupabaseService.getInstance();
-    const encryptionService = new EncryptionService();
+    const encryptionService = new EncryptionService(config.agentId);
     const toolHandler = new ToolHandler(supabaseService, encryptionService);
 
     // Get service details

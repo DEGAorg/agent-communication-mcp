@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
+import { config } from '../config.js';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -150,7 +151,7 @@ export async function createMessage(
   parentMessageId?: string,
   conversationId?: string
 ): Promise<MessageCreate> {
-  const encryptionService = new EncryptionService();
+  const encryptionService = new EncryptionService(config.agentId);
   const supabaseService = SupabaseService.getInstance();
   
   // If there's no private content, return message without encryption

@@ -9,7 +9,10 @@ export enum FileType {
   WALLET_BACKUP = 'wallet-backup',
   LOG = 'log',
   TRANSACTION_DB = 'transaction-db',
-  ENCRYPTION = 'encryption'
+  ENCRYPTION = 'encryption',
+  // Content types
+  SERVICE_CONTENT = 'service-content', // For content provided by services
+  RECEIVED_CONTENT = 'received-content' // For content received from services
 }
 
 /**
@@ -97,7 +100,9 @@ export class FileManager {
       [FileType.WALLET_BACKUP]: 'wallet-backups',
       [FileType.LOG]: 'logs',
       [FileType.TRANSACTION_DB]: 'transaction-db',
-      [FileType.ENCRYPTION]: 'encryption'
+      [FileType.ENCRYPTION]: 'encryption',
+      [FileType.SERVICE_CONTENT]: 'service-contents',
+      [FileType.RECEIVED_CONTENT]: 'received-contents'
     };
     
     return path.join(this.config.baseDir, typeDirs[fileType]);
