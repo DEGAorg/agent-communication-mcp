@@ -38,6 +38,28 @@ MCP_AUTH_EMAIL=your.email@example.com
 
 The system uses X25519 key pairs for secure communication. Each agent needs its own key pair.
 
+### Setup Agent
+
+Set up a new agent with encryption keys:
+```bash
+yarn setup:agent -a <agent-id> [-d <directory>]
+```
+
+This will:
+- Create the necessary directory structure
+- Generate a new X25519 key pair
+- Save the keys in the encryption directory
+- Set appropriate file permissions
+
+Example:
+```bash
+yarn setup:agent -a midnight-agent -d /home/cerrato/mnai/midnight-agent
+```
+
+The keys will be saved as:
+- `<directory>/.storage/encryption/<agent-id>/public.key`
+- `<directory>/.storage/encryption/<agent-id>/private.key`
+
 ### Generate Key Pair
 
 Generate a new X25519 key pair:

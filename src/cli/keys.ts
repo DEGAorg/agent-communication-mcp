@@ -3,7 +3,7 @@ import { x25519 } from '@noble/curves/ed25519';
 import { randomBytes } from '@noble/hashes/utils';
 import chalk from 'chalk';
 
-class KeyPairGenerator {
+export class KeyPairGenerator {
   static generateKeyPair(): { publicKey: string; privateKey: string } {
     // Generate X25519 key pair
     const privateKey = randomBytes(32);
@@ -17,6 +17,22 @@ class KeyPairGenerator {
       publicKey: publicKeyBase64,
       privateKey: privateKeyBase64
     };
+  }
+}
+
+// CLI command handler
+async function main() {
+  const command = process.argv[2];
+
+  switch (command) {
+    case 'generate':
+      await generateKeys();
+      break;
+    default:
+      logger.error('Unknown command. Available commands: generate');
+      logger.info('\nUsage:');
+      logger.info('  yarn keys:generate    - Generate new key pair');
+      process.exit(1);
   }
 }
 
@@ -46,20 +62,7 @@ async function generateKeys() {
   }
 }
 
-// CLI command handler
-async function main() {
-  const command = process.argv[2];
-
-  switch (command) {
-    case 'generate':
-      await generateKeys();
-      break;
-    default:
-      logger.error('Unknown command. Available commands: generate');
-      logger.info('\nUsage:');
-      logger.info('  yarn keys:generate    - Generate new key pair');
-      process.exit(1);
-  }
-}
-
-main(); 
+// Only run CLI if this file is being run directly
+if (process.argv[1] === import.meta.url) {
+  main();
+} 
