@@ -4,6 +4,7 @@ import { SupabaseService } from '../supabase/service.js';
 import { EncryptionService } from '../encryption/service.js';
 import { MessageHandler } from '../supabase/message-handler.js';
 import { ReceivedContentStorage } from '../storage/received-content.js';
+import { config } from '../config.js';
 
 export enum SystemState {
   UNINITIALIZED = 'UNINITIALIZED',
@@ -47,7 +48,7 @@ export class StateManager {
       const authService = AuthService.getInstance();
       const supabaseService = SupabaseService.getInstance();
       const messageHandler = MessageHandler.getInstance();
-      const encryptionService = new EncryptionService();
+      const encryptionService = new EncryptionService(config.agentId);
       const receivedContentStorage = ReceivedContentStorage.getInstance();
 
       // Create the instance first

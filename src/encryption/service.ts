@@ -4,19 +4,20 @@ import { randomBytes } from '@noble/hashes/utils';
 import { createCipheriv, createDecipheriv } from 'crypto';
 import { supabase } from '../supabase/config.js';
 import { MessagePublic } from '../supabase/message-types.js';
+import { KeyManager } from '../utils/key-manager.js';
 
 export class EncryptionService {
   private readonly publicKey: Uint8Array;
   private readonly privateKey: Uint8Array;
 
-  constructor() {
-    // Load keys from environment variables
-    const publicKeyBase64 = process.env.AGENT_PUBLIC_KEY;
-    const privateKeyBase64 = process.env.AGENT_PRIVATE_KEY;
-
-    if (!publicKeyBase64 || !privateKeyBase64) {
-      throw new Error('Agent keys not found in environment variables. Please run "yarn cli generate-keys <agent-id>" first.');
+  constructor(agentId: string) {
+    // Load keys from files using KeyManager
+    if (!KeyManager.hasAgentKeys(agentId)) {
+      throw new Error(`Agent keys not found. Please run "yarn cli generate-keys <agent-id>" first.`);
     }
+
+    const publicKeyBase64 = KeyManager.getAgentPublicKey(agentId);
+    const privateKeyBase64 = KeyManager.getAgentPrivateKey(agentId);
 
     this.publicKey = Buffer.from(publicKeyBase64, 'base64');
     this.privateKey = Buffer.from(privateKeyBase64, 'base64');

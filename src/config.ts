@@ -29,10 +29,33 @@ if (result.error) {
   console.log('Environment variables loaded successfully');
 }
 
-export const config = {
+// Define required environment variables
+const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'AGENT_ID'] as const;
+
+// Validate required environment variables
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
+
+// Type-safe config interface
+interface Config {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  agentId: string;
+  port: number;
+  nodeEnv: string;
+  logLevel: string;
+  logFile?: string;
+}
+
+// Create config object with validated environment variables
+export const config: Config = {
   // Supabase configuration
-  supabaseUrl: process.env.SUPABASE_URL || '',
-  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
+  supabaseUrl: process.env.SUPABASE_URL!,
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY!,
+  agentId: process.env.AGENT_ID!,
 
   // Server configuration
   port: parseInt(process.env.PORT || '3000', 10),
@@ -47,16 +70,8 @@ export const config = {
 console.log('Configuration loaded:', {
   hasSupabaseUrl: !!config.supabaseUrl,
   hasSupabaseAnonKey: !!config.supabaseAnonKey,
+  agentId: config.agentId,
   port: config.port,
   nodeEnv: config.nodeEnv,
   logLevel: config.logLevel
-});
-
-// Validate required environment variables
-const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY'] as const;
-
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    throw new Error(`Missing required environment variable: ${envVar}`);
-  }
-} 
+}); 
