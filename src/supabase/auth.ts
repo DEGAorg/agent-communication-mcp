@@ -2,6 +2,7 @@ import { supabase } from './config.js';
 import { logger } from '../logger.js';
 import { SupabaseService } from './service.js';
 import { FileManager, FileType } from '../utils/file-manager.js';
+import { KeyManager } from '../utils/key-manager.js';
 
 export class AuthService {
   private static instance: AuthService;
@@ -108,6 +109,34 @@ export class AuthService {
 
       // Register agent if needed
       await this.registerAgent();
+
+      // Reactivate services after loading session
+      if (this.supabaseService) {
+        const agentId = this.getCurrentUserId();
+        if (agentId) {
+          const { error: updateError } = await supabase
+            .from('services')
+            .update({ 
+              status: 'active',
+              connection_status: 'connected'
+            })
+            .eq('agent_id', agentId)
+            .eq('connection_status', 'disconnected');
+
+          if (updateError) {
+            logger.error({
+              msg: 'Error reactivating services',
+              error: updateError.message,
+              details: updateError.details,
+              context: {
+                operation: 'service_reactivation',
+                agentId,
+                timestamp: new Date().toISOString()
+              }
+            });
+          }
+        }
+      }
 
       return true;
     } catch (error) {
@@ -286,7 +315,6 @@ export class AuthService {
           context: {
             userId: this.currentSession?.user?.id,
             agentName: process.env.AGENT_NAME || 'default_agent',
-            hasPublicKey: !!process.env.AGENT_PUBLIC_KEY,
             timestamp: new Date().toISOString()
           }
         });
@@ -294,7 +322,6 @@ export class AuthService {
       }
 
       const agentName = process.env.AGENT_NAME || 'default_agent';
-      const publicKey = process.env.AGENT_PUBLIC_KEY;
       const userId = this.currentSession?.user?.id;
 
       if (!userId) {
@@ -305,19 +332,18 @@ export class AuthService {
           details: 'The current session does not contain a valid user ID',
           context: {
             agentName,
-            hasPublicKey: !!publicKey,
             timestamp: new Date().toISOString()
           }
         });
         throw error;
       }
 
-      if (!publicKey) {
-        const error = new Error('AGENT_PUBLIC_KEY environment variable is required for agent registration');
+      if (!KeyManager.hasAgentKeys(userId)) {
+        const error = new Error('Agent keys not found');
         logger.error({
           msg: 'Failed to register agent',
           error: error.message,
-          details: 'The AGENT_PUBLIC_KEY environment variable is missing',
+          details: 'The agent keys are not initialized',
           context: {
             userId,
             agentName,
@@ -326,6 +352,8 @@ export class AuthService {
         });
         throw error;
       }
+
+      const publicKey = KeyManager.getAgentPublicKey(userId);
 
       // Check if agent is already registered
       const existingAgent = await this.supabaseService.getAgent(userId);
@@ -350,7 +378,6 @@ export class AuthService {
         context: {
           userId: this.currentSession?.user?.id,
           agentName: process.env.AGENT_NAME || 'default_agent',
-          hasPublicKey: !!process.env.AGENT_PUBLIC_KEY,
           timestamp: new Date().toISOString()
         }
       });

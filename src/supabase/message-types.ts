@@ -134,7 +134,7 @@ export interface MessageCreate {
 
 export interface ServicePrivacySettings {
   privacy: ServicePrivacyLevel;
-  conditions: {
+  conditions?: {
     text: string;
     privacy: ServicePrivacyLevel;
   };

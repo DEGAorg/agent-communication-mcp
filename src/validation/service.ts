@@ -43,6 +43,14 @@ const VALIDATION_RULES = {
   },
   privacy: {
     allowedValues: Object.values(SERVICE_PRIVACY_LEVELS)
+  },
+  midnight_wallet_address: {
+    minLength: 5,
+    maxLength: 150,  // Increased to accommodate the example address length
+    pattern: /^[a-zA-Z0-9\-_]+$/  // Allow alphanumeric, hyphens, and underscores
+  },
+  status: {
+    allowedValues: ['active', 'inactive']
   }
 } as const;
 
@@ -161,6 +169,34 @@ export function validateServicePrivacy(privacy: string): void {
   }
 }
 
+export function validateMidnightWalletAddress(address: string): void {
+  if (!address) {
+    throw new ServiceValidationError('Midnight wallet address is required');
+  }
+  
+  if (address.length < VALIDATION_RULES.midnight_wallet_address.minLength) {
+    throw new ServiceValidationError('Midnight wallet address is too short');
+  }
+  
+  if (address.length > VALIDATION_RULES.midnight_wallet_address.maxLength) {
+    throw new ServiceValidationError('Midnight wallet address is too long');
+  }
+  
+  if (!VALIDATION_RULES.midnight_wallet_address.pattern.test(address)) {
+    throw new ServiceValidationError('Midnight wallet address can only contain letters, numbers, hyphens, and underscores');
+  }
+}
+
+export function validateServiceStatus(status: string): void {
+  if (!status) {
+    throw new ServiceValidationError('Service status is required');
+  }
+  
+  if (!VALIDATION_RULES.status.allowedValues.includes(status as 'active' | 'inactive')) {
+    throw new ServiceValidationError(`Invalid status. Must be one of: ${VALIDATION_RULES.status.allowedValues.join(', ')}`);
+  }
+}
+
 export function validateService(service: {
   name: string;
   type: string;
@@ -169,17 +205,29 @@ export function validateService(service: {
   description: string;
   privacy_settings: {
     privacy: string;
-    conditions: {
+    conditions?: {
       text: string;
       privacy: string;
     };
   };
+  midnight_wallet_address: string;
+  status?: 'active' | 'inactive';
 }): void {
   validateServiceName(service.name);
   validateServiceType(service.type);
   validateServiceDescription(service.description);
   validateServiceExample(service.example);
   validateServicePrice(service.price);
-  validateServicePrivacy(service.privacy_settings.privacy);
-  validateServicePrivacy(service.privacy_settings.conditions.privacy);
+  if (service.privacy_settings?.privacy) {
+    validateServicePrivacy(service.privacy_settings.privacy);
+  }
+  validateMidnightWalletAddress(service.midnight_wallet_address);
+  
+  // If status is provided, validate it
+  if (service.status) {
+    validateServiceStatus(service.status);
+  } else {
+    // Force status to be 'inactive' for new services
+    service.status = 'inactive';
+  }
 } 

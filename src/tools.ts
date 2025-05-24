@@ -8,9 +8,19 @@ import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
 import { createPaymentNotificationMessage, createServiceFeedbackMessage } from './supabase/message-helper.js';
 import { ServiceContentStorage } from './storage/service-content.js';
+import { config } from './config.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
+  {
+    name: 'status',
+    description: 'Check the connection status and authentication state of the agent in the marketplace. This tool provides information about whether the agent is connected to the marketplace, authenticated, and the current user details if authenticated. Also it provides the agent storage name of the local files.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
   {
     name: 'login',
     description: 'Login or register with email authentication. This tool handles both first-time registration and subsequent logins. For first-time users, it will send a registration confirmation email. For existing users, it will send an OTP code. The tool will guide you through the process based on which email you receive.',
@@ -35,7 +45,7 @@ export const ALL_TOOLS = [
   },
   {
     name: 'listServices',
-    description: 'Retrieve a list of available services in the marketplace with optional filtering by topics or interests. This tool allows agents to discover services that match their specific needs. You can filter services by topics, price range, or service type. Returns a list of matching services with their details including name, type, price, and description.',
+    description: 'Retrieve a list of available services in the marketplace with optional filtering by topics or interests. This tool allows agents to discover services that match their specific needs. You can filter services by topics, price range, or service type. By default, only active services are shown. Returns a list of matching services with their details including name, type, price, and description.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -55,6 +65,10 @@ export const ALL_TOOLS = [
         serviceType: {
           type: 'string',
           description: 'Optional service type filter'
+        },
+        includeInactive: {
+          type: 'boolean',
+          description: 'Optional flag to include inactive services in the results. Defaults to false.'
         }
       },
       required: []
@@ -62,7 +76,7 @@ export const ALL_TOOLS = [
   },
   {
     name: 'registerService',
-    description: 'Register a new service that your agent will provide to other agents. This tool is used by service providers to create a new service offering in the marketplace. You must specify the service details including name, type, price, description, and privacy settings. The privacy settings determine how information about the service, payments, and deliveries will be shared.',
+    description: 'Register a new service that your agent will provide to other agents. This tool is used by service providers to create a new service offering in the marketplace. You must specify the service details including name, type, price, description, privacy settings, and your Midnight wallet address. The privacy settings determine how information about the service, payments, and deliveries will be shared. Note that new services are created with "inactive" status by default and will be automatically activated once you add content to them using the storeServiceContent tool.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -85,6 +99,10 @@ export const ALL_TOOLS = [
         description: { 
           type: 'string',
           description: 'Service description (10-1000 chars)'
+        },
+        midnight_wallet_address: {
+          type: 'string',
+          description: 'Your Midnight wallet address where you will receive payments (32+ chars, alphanumeric)'
         },
         privacy_settings: {
           type: 'object',
@@ -110,19 +128,22 @@ export const ALL_TOOLS = [
               required: ['text', 'privacy']
             }
           },
-          required: ['privacy', 'conditions']
+          required: ['privacy']
         }
       },
-      required: ['name', 'type', 'price', 'description', 'privacy_settings']
+      required: ['name', 'type', 'price', 'description', 'privacy_settings', 'midnight_wallet_address']
     }
   },
   {
     name: 'storeServiceContent',
-    description: 'Store the content that will be delivered to customers when they purchase your service. This tool is used by service providers to prepare and store the content locally before it is delivered. The content will be automatically delivered to customers once their payment is confirmed. You must specify the service ID, the content to be delivered, and a version number. Optional tags can be added for better organization.',
+    description: 'Store the content that will be delivered to customers when they purchase your service. This tool is used by service providers to prepare and store the content locally before it is delivered. The content will be automatically delivered to customers once their payment is confirmed. You must specify the service ID (which must be the UUID generated by the database when you registered the service), the content to be delivered, and a version number. Optional tags can be added for better organization.',
     inputSchema: {
       type: 'object',
       properties: {
-        serviceId: { type: 'string' },
+        serviceId: { 
+          type: 'string',
+          description: 'The UUID of the service (generated by the database during service registration)'
+        },
         content: { type: 'object' },
         version: { type: 'string' },
         tags: { 
@@ -185,6 +206,20 @@ export const ALL_TOOLS = [
       },
       required: ['serviceId', 'rating', 'feedback']
     }
+  },
+  {
+    name: 'disableService',
+    description: 'Disable a service that you no longer want to provide. This will set the service status to inactive, making it no longer visible to other agents in the marketplace. You can only disable your own services. The service can be reactivated later by adding new content to it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        serviceId: {
+          type: 'string',
+          description: 'ID of the service to disable'
+        }
+      },
+      required: ['serviceId']
+    }
   }
 ];
 
@@ -234,6 +269,9 @@ export class ToolHandler {
       await this.stateManager.ensureReadyWithRecovery();
 
       switch (toolName) {
+        case 'status':
+          return await this.handleStatus();
+        
         case 'login':
           return await this.handleLogin(toolArgs);
         
@@ -254,6 +292,9 @@ export class ToolHandler {
         
         case 'provideServiceFeedback':
           return await this.handleProvideServiceFeedback(toolArgs);
+
+        case 'disableService':
+          return await this.handleDisableService(toolArgs);
         
         default:
           throw new McpError(
@@ -286,6 +327,68 @@ export class ToolHandler {
       throw new McpError(
         ErrorCode.InternalError,
         `Error handling tool call for ${toolName}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private async handleStatus() {
+    try {
+      // Ensure state manager is initialized
+      if (!this.stateManager) {
+        await this.initialize();
+      }
+
+      // Get the current user ID from the auth service
+      const agentId = this.authService.getCurrentUserId();
+      const isAuthenticated = !!agentId;
+
+      // Get Supabase connection status
+      const supabaseStatus = await this.supabaseService.checkConnection();
+
+      // Get MCP state status
+      const mcpState = await this.stateManager!.getState();
+      const isReady = await this.stateManager!.isReady();
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'success',
+              mcp: {
+                ready: isReady,
+                state: mcpState,
+                needsLogin: !isAuthenticated,
+                suggestion: !isAuthenticated ? 'Please use the login tool to authenticate with the marketplace.' : null
+              },
+              marketplace: {
+                connected: supabaseStatus.connected,
+                status: supabaseStatus.status,
+                authenticated: supabaseStatus.authenticated,
+                authStatus: supabaseStatus.authStatus
+              },
+              agentStorageName: config.agentId,
+              timestamp: new Date().toISOString()
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error({
+        msg: 'Error checking status',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          timestamp: new Date().toISOString()
+        }
+      });
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to check status: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -402,6 +505,7 @@ export class ToolHandler {
     minPrice?: number; 
     maxPrice?: number; 
     serviceType?: string; 
+    includeInactive?: boolean;
   } = {}) {
     try {
       const services = await this.supabaseService.listServices(args);
@@ -539,14 +643,38 @@ export class ToolHandler {
         tags
       });
 
-      logger.info(`Service content stored successfully for service: ${service.name}`);
+      // Activate the service after content is stored
+      const { error: updateError } = await this.supabaseService.getSupabaseClient()
+        .from('services')
+        .update({ status: 'active' })
+        .eq('id', serviceId)
+        .eq('agent_id', agentId);
+
+      if (updateError) {
+        logger.error({
+          msg: 'Error activating service after content storage',
+          error: updateError.message,
+          details: updateError.details,
+          context: {
+            serviceId,
+            agentId,
+            timestamp: new Date().toISOString()
+          }
+        });
+        throw new McpError(
+          ErrorCode.InternalError,
+          'Failed to activate service after content storage'
+        );
+      }
+
+      logger.info(`Service content stored and service activated successfully for service: ${service.name}`);
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
               status: 'success',
-              message: 'Service content stored successfully',
+              message: 'Service content stored and service activated successfully',
               serviceContent
             }, null, 2),
             mimeType: 'application/json'
@@ -561,8 +689,14 @@ export class ToolHandler {
         context: {
           serviceId,
           version,
-          contentLength: content.length,
-          timestamp: new Date().toISOString()
+          contentLength: JSON.stringify(content).length,
+          timestamp: new Date().toISOString(),
+          errorDetails: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            ...(error as any)
+          } : error
         }
       });
       if (error instanceof McpError) {
@@ -805,6 +939,97 @@ export class ToolHandler {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to provide service feedback: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private async handleDisableService(args: { serviceId: string }) {
+    const { serviceId } = args;
+
+    try {
+      // Get the current user ID from the auth service
+      const agentId = this.authService.getCurrentUserId();
+      if (!agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'No authenticated agent found'
+        );
+      }
+
+      // Verify the service exists and belongs to the agent
+      const service = await this.supabaseService.getServiceById(serviceId);
+      if (!service) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Service with ID ${serviceId} not found`
+        );
+      }
+
+      if (service.agent_id !== agentId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'You can only disable your own services'
+        );
+      }
+
+      // Disable the service
+      const { error: updateError } = await this.supabaseService.getSupabaseClient()
+        .from('services')
+        .update({ 
+          status: 'inactive',
+          connection_status: 'manual_disabled'
+        })
+        .eq('id', serviceId)
+        .eq('agent_id', agentId);
+
+      if (updateError) {
+        logger.error({
+          msg: 'Error disabling service',
+          error: updateError.message,
+          details: updateError.details,
+          context: {
+            serviceId,
+            agentId,
+            timestamp: new Date().toISOString()
+          }
+        });
+        throw new McpError(
+          ErrorCode.InternalError,
+          'Failed to disable service'
+        );
+      }
+
+      logger.info(`Service disabled successfully: ${service.name}`);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'success',
+              message: 'Service disabled successfully',
+              serviceId,
+              serviceName: service.name
+            }, null, 2),
+            mimeType: 'application/json'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error({
+        msg: 'Error disabling service',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          serviceId,
+          timestamp: new Date().toISOString()
+        }
+      });
+      if (error instanceof McpError) {
+        throw error;
+      }
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to disable service: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

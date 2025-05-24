@@ -92,6 +92,7 @@ export class SupabaseService {
       }
 
       logger.info('Supabase connection test successful');
+
       logger.info('Supabase connection initialized successfully');
     } catch (error) {
       logger.error({
@@ -329,11 +330,17 @@ export class SupabaseService {
     minPrice?: number;
     maxPrice?: number;
     serviceType?: string;
+    includeInactive?: boolean;
   }): Promise<Service[]> {
     try {
       let query = supabase
         .from(TABLES.SERVICES)
         .select('*');
+
+      // By default, only show active services unless explicitly requested
+      if (!filters?.includeInactive) {
+        query = query.eq('status', 'active');
+      }
 
       // Apply price filters
       if (filters?.minPrice !== undefined && filters.minPrice !== null) {
@@ -597,6 +604,41 @@ export class SupabaseService {
       // Stop health check
       this.stopHealthCheck();
       
+      // Only attempt to update services if we have an authenticated agent
+      try {
+        const agentId = this.getCurrentAgentId();
+        const { error: updateError } = await supabase
+          .from(TABLES.SERVICES)
+          .update({ 
+            status: 'inactive',
+            connection_status: 'disconnected'
+          })
+          .eq('agent_id', agentId)
+          .eq('connection_status', 'connected');
+
+        if (updateError) {
+          logger.error({
+            msg: 'Error marking services as disconnected',
+            error: updateError.message,
+            details: updateError.details,
+            context: {
+              operation: 'service_disconnection',
+              agentId,
+              timestamp: new Date().toISOString()
+            }
+          });
+        }
+      } catch (error) {
+        // Log but don't throw - this is expected during cleanup when not authenticated
+        logger.info({
+          msg: 'Skipping service status update during cleanup - no authenticated agent',
+          context: {
+            operation: 'cleanup',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+      
       // Clean up realtime subscriptions
       if (this.messageChannel) {
         try {
@@ -633,7 +675,77 @@ export class SupabaseService {
           timestamp: new Date().toISOString()
         }
       });
-      throw error;
+      // Don't throw the error during cleanup
+      logger.info('Continuing with cleanup despite errors');
+    }
+  }
+
+  /**
+   * Check the connection status of the Supabase service
+   * @returns Object containing connection status information
+   */
+  async checkConnection(): Promise<{ 
+    connected: boolean; 
+    status: string;
+    authenticated: boolean;
+    authStatus: string;
+  }> {
+    try {
+      // Test connection by making a simple query
+      const { data, error } = await supabase.from('agents').select('count').limit(1);
+      
+      if (error) {
+        logger.error({
+          msg: 'Supabase connection check failed',
+          error: error.message,
+          details: error.details,
+          context: {
+            operation: 'connection_check',
+            code: error.code,
+            hint: error.hint,
+            timestamp: new Date().toISOString()
+          }
+        });
+        return {
+          connected: false,
+          status: `Connection error: ${error.message}`,
+          authenticated: false,
+          authStatus: 'Not authenticated (connection failed)'
+        };
+      }
+
+      // Check realtime subscription status
+      const realtimeStatus = this.messageChannel ? 'connected' : 'disconnected';
+
+      // Check authentication status
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const isAuthenticated = !!sessionData.session;
+      const authStatus = isAuthenticated 
+        ? `Authenticated as ${sessionData.session.user.email}`
+        : 'Not authenticated';
+
+      return {
+        connected: true,
+        status: `Connected (Realtime: ${realtimeStatus})`,
+        authenticated: isAuthenticated,
+        authStatus
+      };
+    } catch (error) {
+      logger.error({
+        msg: 'Error checking Supabase connection',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          operation: 'connection_check',
+          timestamp: new Date().toISOString()
+        }
+      });
+      return {
+        connected: false,
+        status: `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        authenticated: false,
+        authStatus: 'Not authenticated (check failed)'
+      };
     }
   }
 } 

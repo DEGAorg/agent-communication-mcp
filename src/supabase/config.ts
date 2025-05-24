@@ -20,6 +20,9 @@ export interface Service {
   price: number;
   description: string;
   privacy_settings: ServicePrivacySettings;
+  midnight_wallet_address: string;
+  status: 'active' | 'inactive';
+  connection_status: 'connected' | 'disconnected' | 'manual_disabled';
 }
 
 export type Message = MessageType;
