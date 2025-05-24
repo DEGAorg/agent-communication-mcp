@@ -3,7 +3,7 @@ import { SupabaseService } from './supabase/service.js';
 import { EncryptionService } from './encryption/service.js';
 import { logger } from './logger.js';
 import { Service } from './supabase/config.js';
-import { validateService } from './validation/service.js';
+import { validateService, validateServiceFilters, ServiceFilters } from './validation/service.js';
 import { AuthService } from './supabase/auth.js';
 import { StateManager } from './state/manager.js';
 import { createPaymentNotificationMessage, createServiceFeedbackMessage } from './supabase/message-helper.js';
@@ -500,15 +500,66 @@ export class ToolHandler {
     }
   }
 
-  private async handleListServices(args: { 
-    topics?: string[]; 
-    minPrice?: number; 
-    maxPrice?: number; 
-    serviceType?: string; 
-    includeInactive?: boolean;
-  } = {}) {
+  private async handleListServices(args: ServiceFilters = {}) {
     try {
-      const services = await this.supabaseService.listServices(args);
+      logger.info({
+        msg: 'Starting handleListServices',
+        args: JSON.stringify(args),
+        context: {
+          agentId: this.authService.getCurrentUserId() || 'unknown',
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      // Log pre-validation state
+      logger.info({
+        msg: 'Pre-validation state',
+        args: {
+          topics: args.topics,
+          minPrice: args.minPrice,
+          maxPrice: args.maxPrice,
+          serviceType: args.serviceType,
+          includeInactive: args.includeInactive
+        }
+      });
+
+      // Validate the filters
+      validateServiceFilters(args);
+
+      // Log post-validation state
+      logger.info({
+        msg: 'Post-validation state',
+        args: {
+          topics: args.topics,
+          minPrice: args.minPrice,
+          maxPrice: args.maxPrice,
+          serviceType: args.serviceType,
+          includeInactive: args.includeInactive
+        }
+      });
+
+      // Convert null values to undefined for the service call
+      const serviceArgs = {
+        ...args,
+        minPrice: args.minPrice ?? undefined,
+        maxPrice: args.maxPrice ?? undefined,
+        serviceType: args.serviceType ?? undefined
+      };
+
+      // Log pre-query state
+      logger.info({
+        msg: 'Pre-database query state',
+        serviceArgs: JSON.stringify(serviceArgs)
+      });
+
+      const services = await this.supabaseService.listServices(serviceArgs);
+
+      // Log post-query state
+      logger.info({
+        msg: 'Post-database query state',
+        servicesCount: services.length,
+        firstService: services.length > 0 ? services[0] : null
+      });
 
       return {
         content: [
@@ -526,7 +577,10 @@ export class ToolHandler {
     } catch (error) {
       const context = {
         agentId: this.authService.getCurrentUserId() || 'unknown',
-        filters: args
+        filters: args,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined
       };
       
       logger.error({

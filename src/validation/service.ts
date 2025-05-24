@@ -230,4 +230,65 @@ export function validateService(service: {
     // Force status to be 'inactive' for new services
     service.status = 'inactive';
   }
+}
+
+export interface ServiceFilters {
+  topics?: string[];
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  serviceType?: string | null;
+  includeInactive?: boolean;
+}
+
+export function validateServiceFilters(filters: ServiceFilters): void {
+  const { minPrice, maxPrice, serviceType } = filters;
+
+  // Validate minPrice if provided
+  if (minPrice !== null && minPrice !== undefined) {
+    if (typeof minPrice !== 'number' || isNaN(minPrice)) {
+      throw new ServiceValidationError('minPrice must be a valid number when provided');
+    }
+    if (minPrice < VALIDATION_RULES.price.min) {
+      throw new ServiceValidationError(`minPrice must be at least ${VALIDATION_RULES.price.min}`);
+    }
+    if (minPrice > VALIDATION_RULES.price.max) {
+      throw new ServiceValidationError(`minPrice must not exceed ${VALIDATION_RULES.price.max}`);
+    }
+  }
+
+  // Validate maxPrice if provided
+  if (maxPrice !== null && maxPrice !== undefined) {
+    if (typeof maxPrice !== 'number' || isNaN(maxPrice)) {
+      throw new ServiceValidationError('maxPrice must be a valid number when provided');
+    }
+    if (maxPrice < VALIDATION_RULES.price.min) {
+      throw new ServiceValidationError(`maxPrice must be at least ${VALIDATION_RULES.price.min}`);
+    }
+    if (maxPrice > VALIDATION_RULES.price.max) {
+      throw new ServiceValidationError(`maxPrice must not exceed ${VALIDATION_RULES.price.max}`);
+    }
+  }
+
+  // Validate price range if both are provided
+  if (minPrice !== null && maxPrice !== null && typeof minPrice === 'number' && typeof maxPrice === 'number') {
+    if (minPrice > maxPrice) {
+      throw new ServiceValidationError('minPrice cannot be greater than maxPrice');
+    }
+  }
+
+  // Validate serviceType if provided
+  if (serviceType !== null && serviceType !== undefined) {
+    if (typeof serviceType !== 'string') {
+      throw new ServiceValidationError('serviceType must be a string when provided');
+    }
+    if (serviceType.length < VALIDATION_RULES.type.minLength) {
+      throw new ServiceValidationError(`serviceType must be at least ${VALIDATION_RULES.type.minLength} characters long`);
+    }
+    if (serviceType.length > VALIDATION_RULES.type.maxLength) {
+      throw new ServiceValidationError(`serviceType must not exceed ${VALIDATION_RULES.type.maxLength} characters`);
+    }
+    if (!VALIDATION_RULES.type.pattern.test(serviceType)) {
+      throw new ServiceValidationError('serviceType can only contain letters, numbers, and underscores');
+    }
+  }
 } 
