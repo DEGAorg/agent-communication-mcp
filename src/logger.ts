@@ -87,9 +87,9 @@ export const LoggerConfig = {
    * Standard fields to include with all logs
    */
   standardFields: {
-    application: 'midnight-mcp',
-    environment: process.env.NODE_ENV || 'development',
-    version: process.env.APP_VERSION || '0.0.1',
+    application: 'comms',
+    environment: process.env.NODE_ENV || 'dev',
+    version: process.env.APP_VERSION || '1',
   },
 };
 
@@ -123,10 +123,10 @@ export function createLogger(name: string, options: LoggerOptions = {}): pino.Lo
     level,
     name,
     base: {
-      application: standardFields.application,
-      environment: standardFields.environment,
-      version: standardFields.version,
-      agentId,
+      n: standardFields.application,
+      e: standardFields.environment,
+      v: standardFields.version,
+      a: agentId,
       ...standardFields.custom,
     },
   };
@@ -164,7 +164,9 @@ export function createLogger(name: string, options: LoggerOptions = {}): pino.Lo
       level,
       options: {
         destination: logPath,
-        mkdir: true
+        mkdir: true,
+        messageKey: 'msg',
+        ignore: 'pid,hostname,name'
       }
     });
   }

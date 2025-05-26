@@ -426,7 +426,7 @@ export async function createServiceDeliveryMessage(
           version,
           timestamp: new Date().toISOString(),
           content: serviceContent,
-          conditions: privacySettings.conditions.text
+          conditions: privacySettings.conditions?.text || ''
         },
         metadata: createMessageMetadata()
       }
@@ -449,7 +449,7 @@ export async function createServiceDeliveryMessage(
     version,
     timestamp: new Date().toISOString(),
     content: serviceContent,
-    conditions: privacySettings.conditions.text
+    conditions: privacySettings.conditions?.text || ''
   };
 
   const content = createMessageContent(

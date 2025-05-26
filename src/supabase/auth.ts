@@ -2,6 +2,7 @@ import { supabase } from './config.js';
 import { logger } from '../logger.js';
 import { SupabaseService } from './service.js';
 import { FileManager, FileType } from '../utils/file-manager.js';
+import { KeyManager } from '../utils/key-manager.js';
 
 export class AuthService {
   private static instance: AuthService;
@@ -106,8 +107,49 @@ export class AuthService {
       this.currentSession = session;
       logger.info('Successfully loaded existing session');
 
-      // Register agent if needed
-      await this.registerAgent();
+      // Try to register agent if needed, but don't fail if registration fails
+      try {
+        await this.registerAgent();
+      } catch (error) {
+        // Log the error but don't fail the session load
+        logger.warn({
+          msg: 'Agent registration failed during session load',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            userId: this.currentSession?.user?.id,
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+      // Reactivate services after loading session
+      if (this.supabaseService) {
+        const agentId = this.getCurrentUserId();
+        if (agentId) {
+          const { error: updateError } = await supabase
+            .from('services')
+            .update({ 
+              status: 'active',
+              connection_status: 'connected'
+            })
+            .eq('agent_id', agentId)
+            .eq('connection_status', 'disconnected');
+
+          if (updateError) {
+            logger.error({
+              msg: 'Error reactivating services',
+              error: updateError.message,
+              details: updateError.details,
+              context: {
+                operation: 'service_reactivation',
+                agentId,
+                timestamp: new Date().toISOString()
+              }
+            });
+          }
+        }
+      }
 
       return true;
     } catch (error) {
@@ -285,16 +327,12 @@ export class AuthService {
           details: 'The SupabaseService instance was not properly set before attempting to register the agent',
           context: {
             userId: this.currentSession?.user?.id,
-            agentName: process.env.AGENT_NAME || 'default_agent',
-            hasPublicKey: !!process.env.AGENT_PUBLIC_KEY,
             timestamp: new Date().toISOString()
           }
         });
         throw error;
       }
 
-      const agentName = process.env.AGENT_NAME || 'default_agent';
-      const publicKey = process.env.AGENT_PUBLIC_KEY;
       const userId = this.currentSession?.user?.id;
 
       if (!userId) {
@@ -304,44 +342,49 @@ export class AuthService {
           error: error.message,
           details: 'The current session does not contain a valid user ID',
           context: {
-            agentName,
-            hasPublicKey: !!publicKey,
+            userId: this.currentSession?.user?.id,
             timestamp: new Date().toISOString()
           }
         });
         throw error;
       }
 
-      if (!publicKey) {
-        const error = new Error('AGENT_PUBLIC_KEY environment variable is required for agent registration');
-        logger.error({
-          msg: 'Failed to register agent',
-          error: error.message,
-          details: 'The AGENT_PUBLIC_KEY environment variable is missing',
-          context: {
-            userId,
-            agentName,
-            timestamp: new Date().toISOString()
-          }
-        });
-        throw error;
-      }
-
-      // Check if agent is already registered
+      // Check if agent is already registered first
+      logger.info(`Checking if agent ${userId} is already registered...`);
       const existingAgent = await this.supabaseService.getAgent(userId);
       if (existingAgent) {
-        logger.info(`Agent already registered: ${agentName}`);
+        logger.info(`Agent already registered`);
         return;
       }
 
+      // Only check for keys if we need to register
+      logger.info(`Checking for agent keys for ${userId}...`);
+      if (!KeyManager.hasAgentKeys(userId)) {
+        const error = new Error('Agent keys not found');
+        logger.error({
+          msg: 'Failed to register agent',
+          error: error.message,
+          details: 'The agent keys are not initialized. Please run "yarn setup:agent -a <agent-id>" first.',
+          context: {
+            userId: this.currentSession?.user?.id,
+            timestamp: new Date().toISOString()
+          }
+        });
+        throw error;
+      }
+
+      const publicKey = KeyManager.getAgentPublicKey(userId);
+      logger.info(`Found public key for agent ${userId}`);
+
       // Register new agent with the user's ID
+      logger.info(`Registering new agent: ${userId}`);
       await this.supabaseService.registerAgent({
         id: userId,
-        name: agentName,
+        name: userId,
         public_key: publicKey
       });
 
-      logger.info(`Agent registered successfully: ${agentName}`);
+      logger.info(`Agent registered successfully: ${userId}`);
     } catch (error) {
       logger.error({
         msg: 'Failed to register agent',
@@ -349,8 +392,6 @@ export class AuthService {
         details: error instanceof Error ? error.stack : String(error),
         context: {
           userId: this.currentSession?.user?.id,
-          agentName: process.env.AGENT_NAME || 'default_agent',
-          hasPublicKey: !!process.env.AGENT_PUBLIC_KEY,
           timestamp: new Date().toISOString()
         }
       });
