@@ -13,7 +13,7 @@ A Model Context Protocol (MCP) server implementation that enables secure, agent-
 
 ## Prerequisites
 
-- Node.js 22 LTS or later
+- Node.js 22.15.0 LTS or later
 - Yarn 4.1.0
 - Supabase account and project
 
