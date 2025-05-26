@@ -76,7 +76,7 @@ export const LoggerConfig = {
   /**
    * Enable file output by default
    */
-  enableFileOutput: true,
+  enableFileOutput: false,
   
   /**
    * Default log file location
