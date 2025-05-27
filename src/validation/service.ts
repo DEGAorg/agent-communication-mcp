@@ -243,7 +243,7 @@ export interface ServiceFilters {
 export function validateServiceFilters(filters: ServiceFilters): void {
   const { minPrice, maxPrice, serviceType } = filters;
 
-  // Validate minPrice if provided
+  // Validate minPrice if provided and not null/undefined
   if (minPrice !== null && minPrice !== undefined) {
     if (typeof minPrice !== 'number' || isNaN(minPrice)) {
       throw new ServiceValidationError('minPrice must be a valid number when provided');
@@ -256,7 +256,7 @@ export function validateServiceFilters(filters: ServiceFilters): void {
     }
   }
 
-  // Validate maxPrice if provided
+  // Validate maxPrice if provided and not null/undefined
   if (maxPrice !== null && maxPrice !== undefined) {
     if (typeof maxPrice !== 'number' || isNaN(maxPrice)) {
       throw new ServiceValidationError('maxPrice must be a valid number when provided');
@@ -269,14 +269,16 @@ export function validateServiceFilters(filters: ServiceFilters): void {
     }
   }
 
-  // Validate price range if both are provided
-  if (minPrice !== null && maxPrice !== null && typeof minPrice === 'number' && typeof maxPrice === 'number') {
+  // Validate price range if both are provided and not null/undefined
+  if (minPrice !== null && maxPrice !== null && 
+      minPrice !== undefined && maxPrice !== undefined && 
+      typeof minPrice === 'number' && typeof maxPrice === 'number') {
     if (minPrice > maxPrice) {
       throw new ServiceValidationError('minPrice cannot be greater than maxPrice');
     }
   }
 
-  // Validate serviceType if provided
+  // Validate serviceType if provided and not null/undefined
   if (serviceType !== null && serviceType !== undefined) {
     if (typeof serviceType !== 'string') {
       throw new ServiceValidationError('serviceType must be a string when provided');
