@@ -28,6 +28,11 @@ export class EncryptionService {
     return this.publicKey;
   }
 
+  // Get the agent's private key
+  getPrivateKey(): Uint8Array {
+    return this.privateKey;
+  }
+
   // Generate a random AES-256 key
   private generateAESKey(): Uint8Array {
     return randomBytes(32); // 256 bits

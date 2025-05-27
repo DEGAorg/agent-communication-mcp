@@ -65,8 +65,6 @@ export class MessageHandler {
       let decryptedPublicContent: MessagePublic | undefined;
 
       if (hasPrivateContent(message) && hasEncryptedContent(message)) {
-        const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-        
         // Get sender's public key from database
         const senderPublicKeyBase64 = await this.supabaseService!.getAgentPublicKey(message.sender_agent_id);
         if (!senderPublicKeyBase64) {
@@ -78,7 +76,7 @@ export class MessageHandler {
           message.private.encryptedMessage!,
           message.private.encryptedKeys!.recipient,
           senderPublicKey,
-          recipientPrivateKey
+          this.encryptionService!.getPrivateKey()
         );
 
         decryptedPublicContent = publicMessage;

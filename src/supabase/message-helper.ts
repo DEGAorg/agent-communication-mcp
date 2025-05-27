@@ -167,9 +167,6 @@ export async function createMessage(
     };
   }
 
-  // Get the sender's private key and recipient's public key
-  const senderPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-  
   // Get recipient's public key from database
   const recipientPublicKeyBase64 = await supabaseService.getAgentPublicKey(recipientId);
   if (!recipientPublicKeyBase64) {
@@ -177,11 +174,11 @@ export async function createMessage(
   }
   const recipientPublicKey = Buffer.from(recipientPublicKeyBase64, 'base64');
   
-  // Encrypt the private content
+  // Encrypt the private content using encryptionService's private key
   const { encryptedMessage, encryptedKeys } = await encryptionService.encryptMessageForRecipients(
     JSON.stringify(privateContent),
     recipientPublicKey,
-    senderPrivateKey
+    encryptionService.getPrivateKey()
   );
 
   // Generate a new conversation ID if none is provided

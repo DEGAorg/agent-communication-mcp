@@ -1639,7 +1639,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@noble/hashes@npm:1.8.0":
+"@noble/hashes@npm:1.8.0, @noble/hashes@npm:^1.8.0":
   version: 1.8.0
   resolution: "@noble/hashes@npm:1.8.0"
   checksum: 10c0/06a0b52c81a6fa7f04d67762e08b2c476a00285858150caeaaff4037356dd5e119f45b2a530f638b77a5eeca013168ec1b655db41bae3236cb2e9d511484fc77
@@ -6936,6 +6936,7 @@ __metadata:
     "@modelcontextprotocol/sdk": "npm:^1.10.2"
     "@noble/ciphers": "npm:^1.3.0"
     "@noble/curves": "npm:^1.9.0"
+    "@noble/hashes": "npm:^1.8.0"
     "@supabase/supabase-js": "npm:^2.39.0"
     "@types/circomlibjs": "npm:^0"
     "@types/inquirer": "npm:^9.0.8"
