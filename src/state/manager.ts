@@ -5,6 +5,7 @@ import { EncryptionService } from '../encryption/service.js';
 import { MessageHandler } from '../supabase/message-handler.js';
 import { ReceivedContentStorage } from '../storage/received-content.js';
 import { config } from '../config.js';
+import { AppError } from '../errors/AppError.js';
 
 export enum SystemState {
   UNINITIALIZED = 'UNINITIALIZED',
@@ -128,50 +129,40 @@ export class StateManager {
   }
 
   private async processUnreadMessages(): Promise<void> {
-    try {
-      const agentId = this.authService.getCurrentUserId();
-      if (!agentId) {
-        throw new Error('No authenticated agent found');
-      }
+    const agentId = this.authService.getCurrentUserId();
+    if (!agentId) {
+      throw new AppError(
+        'No authenticated agent found',
+        'AUTH_REQUIRED',
+        401
+      );
+    }
 
-      // Get all unread messages for this agent
-      const messages = await this.supabaseService.getUnreadMessages(agentId);
+    // Get all unread messages for this agent
+    const messages = await this.supabaseService.getUnreadMessages(agentId);
+    
+    if (messages.length > 0) {
+      logger.info(`Processing ${messages.length} unread messages`);
       
-      if (messages.length > 0) {
-        logger.info(`Processing ${messages.length} unread messages`);
-        
-        // Process each message sequentially to maintain order
-        for (const message of messages) {
-          try {
-            await this.messageHandler.handleMessage(message);
-          } catch (error) {
-            logger.error({
-              msg: `Error processing unread message ${message.id}`,
-              error: error instanceof Error ? error.message : 'Unknown error',
-              details: error instanceof Error ? error.stack : String(error),
-              context: {
-                messageId: message.id,
-                timestamp: new Date().toISOString()
-              }
-            });
-            // Continue processing other messages even if one fails
-          }
+      // Process each message sequentially to maintain order
+      for (const message of messages) {
+        try {
+          await this.messageHandler.handleMessage(message);
+        } catch (error) {
+          logger.error({
+            msg: `Error processing unread message ${message.id}`,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            details: error instanceof Error ? error.stack : String(error),
+            context: {
+              messageId: message.id,
+              timestamp: new Date().toISOString()
+            }
+          });
+          // Continue processing other messages even if one fails
         }
-        
-        logger.info('Finished processing unread messages');
       }
-    } catch (error) {
-      logger.error({
-        msg: 'Error processing unread messages',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          operation: 'unread_messages',
-          state: this.currentState,
-          timestamp: new Date().toISOString()
-        }
-      });
-      throw error;
+      
+      logger.info('Finished processing unread messages');
     }
   }
 
@@ -179,37 +170,11 @@ export class StateManager {
     try {
       // Start connection process
       this.setState(SystemState.CONNECTING);
-      try {
-        await this.supabaseService.initialize();
-        this.setState(SystemState.CONNECTED);
-      } catch (error) {
-        logger.error({
-          msg: 'Failed to connect to Supabase',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          details: error instanceof Error ? error.stack : String(error),
-          context: {
-            state: this.currentState,
-            timestamp: new Date().toISOString()
-          }
-        });
-        throw error;
-      }
+      await this.supabaseService.initialize();
+      this.setState(SystemState.CONNECTED);
 
-      // Initialize auth service first
-      try {
-        await this.authService.initialize();
-      } catch (error) {
-        logger.error({
-          msg: 'Failed to initialize auth service',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          details: error instanceof Error ? error.stack : String(error),
-          context: {
-            state: this.currentState,
-            timestamp: new Date().toISOString()
-          }
-        });
-        throw error;
-      }
+      // Initialize auth service
+      await this.authService.initialize();
 
       // Check if we have an existing session
       const session = await this.authService.getSession();
@@ -219,33 +184,27 @@ export class StateManager {
         this.setState(SystemState.AUTHENTICATED);
 
         // Set up realtime subscriptions after authentication
-        try {
-          await this.supabaseService.setupRealtimeSubscriptions();
-        } catch (error) {
-          logger.error({
-            msg: 'Failed to setup realtime subscriptions',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            details: error instanceof Error ? error.stack : String(error),
-            context: {
-              operation: 'realtime_setup',
-              state: this.currentState,
-              timestamp: new Date().toISOString()
-            }
-          });
-          throw error;
-        }
+        await this.supabaseService.setupRealtimeSubscriptions();
 
         // Check agent registration
         this.setState(SystemState.REGISTERING);
         const agentId = this.authService.getCurrentUserId();
         if (!agentId) {
-          throw new Error('No authenticated agent found');
+          throw new AppError(
+            'No authenticated agent found',
+            'AUTH_REQUIRED',
+            401
+          );
         }
 
-        // Verify agent is registered (AuthService should have handled registration)
+        // Verify agent is registered
         const agent = await this.supabaseService.getAgent(agentId);
         if (!agent) {
-          throw new Error('Agent registration failed - please check logs for details');
+          throw new AppError(
+            'Agent registration failed - please check logs for details',
+            'AGENT_REGISTRATION_FAILED',
+            500
+          );
         }
         
         this.setState(SystemState.REGISTERED);
@@ -335,9 +294,11 @@ export class StateManager {
   async ensureReady(): Promise<void> {
     if (!this.isReady()) {
       const requirements = this.getStateRequirements();
-      const errorMessage = `System not ready. Current state: ${this.currentState}\nMissing requirements:\n${requirements.map(req => `- ${req}`).join('\n')}`;
-      
-      throw new Error(errorMessage);
+      throw new AppError(
+        `System not ready. Current state: ${this.currentState}\nMissing requirements:\n${requirements.map(req => `- ${req}`).join('\n')}`,
+        'SYSTEM_NOT_READY',
+        503
+      );
     }
   }
 

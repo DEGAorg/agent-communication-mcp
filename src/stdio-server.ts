@@ -17,6 +17,8 @@ import { ToolHandler } from './tools.js';
 import { StateManager } from './state/manager.js';
 import { handleListResources, handleReadResource } from './resources.js';
 import { AuthService } from './supabase/auth.js';
+import { AppError } from './errors/AppError.js';
+import { handleError, formatErrorForResponse } from './errors/errorHandler.js';
 
 /**
  * Format error for logging
@@ -90,30 +92,6 @@ export async function createServer() {
 }
 
 /**
- * Helper function to handle errors uniformly
- */
-function handleError(context: string, error: unknown): never {
-  logger.error({
-    msg: `Error ${context}`,
-    error: error instanceof Error ? error.message : 'Unknown error',
-    details: error instanceof Error ? error.stack : String(error),
-    context: {
-      operation: context,
-      timestamp: new Date().toISOString()
-    }
-  });
-
-  if (error instanceof McpError) {
-    throw error;
-  }
-
-  throw new McpError(
-    ErrorCode.InternalError,
-    `${context}: ${formatError(error)}`,
-  );
-}
-
-/**
  * Set up server request handlers
  */
 function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
@@ -138,16 +116,23 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
       if (authRequiredTools.includes(toolName)) {
         const authService = AuthService.getInstance();
         if (!authService.isAuthenticated()) {
-          throw new McpError(
-            ErrorCode.InvalidRequest,
-            'Authentication required. Please use the login tool to authenticate first.'
+          throw new AppError(
+            'Authentication required. Please use the login tool to authenticate first.',
+            'AUTH_REQUIRED',
+            401
           );
         }
       }
 
       return await toolHandler.handleToolCall(toolName, toolArgs);
     } catch (error) {
-      return handleError('handling tool call', error);
+      const formattedError = formatErrorForResponse(error);
+      throw new AppError(
+        formattedError.message,
+        'TOOL_CALL_ERROR',
+        formattedError.statusCode,
+        error
+      );
     }
   });
 
@@ -156,7 +141,7 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
     try {
       return { resources: handleListResources() };
     } catch (error) {
-      return handleError('listing resources', error);
+      throw handleError('listing resources', error);
     }
   });
 
@@ -174,7 +159,7 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
         }]
       };
     } catch (error) {
-      handleError('reading resource', error);
+      throw handleError('reading resource', error);
     }
   });
 
@@ -229,16 +214,7 @@ async function main() {
     // Handle process exit signals
     setupExitHandlers(server);
   } catch (error) {
-    logger.error({
-      msg: 'Failed to start server',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      details: error instanceof Error ? error.stack : String(error),
-      context: {
-        operation: 'server_startup',
-        timestamp: new Date().toISOString()
-      }
-    });
-    process.exit(1);
+    throw handleError('starting server', error);
   }
 }
 

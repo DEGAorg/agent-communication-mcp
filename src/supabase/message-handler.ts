@@ -10,6 +10,7 @@ import { ReceivedContentStorage } from '../storage/received-content.js';
 import { groth16 } from 'snarkjs';
 import { buildPoseidon } from 'circomlibjs';
 import fs from 'fs';
+import { AppError } from '../errors/AppError.js';
 
 export class MessageHandler {
   private static instance: MessageHandler;
@@ -109,7 +110,15 @@ export class MessageHandler {
           logger.warn(`Unhandled message topic: ${topic}`);
       }
     } catch (error) {
-      logger.error('Error handling message:', error);
+      logger.error({
+        msg: `Error handling message ${message.id}`,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          messageId: message.id,
+          timestamp: new Date().toISOString()
+        }
+      });
       throw error;
     }
   }

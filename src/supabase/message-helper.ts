@@ -19,6 +19,8 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
 import { config } from '../config.js';
+import { AppError } from '../errors/AppError.js';
+import { AuthService } from './auth.js';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -510,4 +512,4 @@ export async function createServiceFeedbackMessage(
     parentMessageId,
     conversationId
   );
-} 
+}

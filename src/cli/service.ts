@@ -7,6 +7,8 @@ import { SupabaseService } from '../supabase/service.js';
 import { EncryptionService } from '../encryption/service.js';
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import { config } from '../config.js';
+import { AppError } from '../errors/AppError.js';
+import { handleError } from '../errors/errorHandler.js';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -70,55 +72,45 @@ function formatError(error: unknown): string {
 }
 
 async function registerService(useTestService: boolean = false) {
-  try {
-    // Ensure we have a valid session
-    const authService = AuthService.getInstance();
-    await authService.getSession();
+  // Ensure we have a valid session
+  const authService = AuthService.getInstance();
+  await authService.getSession();
 
-    if (!authService.isAuthenticated()) {
-      logger.error('Not authenticated. Please run "yarn auth:setup" first.');
-      process.exit(1);
-    }
-
-    // Initialize services
-    const supabaseService = SupabaseService.getInstance();
-    const encryptionService = new EncryptionService(config.agentId);
-    const toolHandler = new ToolHandler(supabaseService, encryptionService);
-
-    // Get service details
-    const serviceDetails = useTestService ? TEST_SERVICE : await promptForServiceDetails();
-    logger.info('Service details received:', serviceDetails);
-
-    try {
-      // Make the tool call directly using the ToolHandler
-      const result = await toolHandler.handleToolCall('registerService', serviceDetails);
-      logger.info('Service registration successful:', result);
-    } catch (error) {
-      logger.error('Error during service registration:', formatError(error));
-      if (error instanceof McpError) {
-        logger.error('MCP Error Code:', error.code);
-        logger.error('MCP Error Message:', error.message);
-      }
-      throw error;
-    } finally {
-      // Clean up
-      await toolHandler.cleanup();
-    }
-
-    process.exit(0);
-  } catch (error) {
-    logger.error('Failed to register service:', formatError(error));
-    process.exit(1);
-  } finally {
-    rl.close();
+  if (!authService.isAuthenticated()) {
+    throw new AppError(
+      'Not authenticated. Please run "yarn auth:setup" first.',
+      'AUTH_REQUIRED',
+      401
+    );
   }
+
+  // Initialize services
+  const supabaseService = SupabaseService.getInstance();
+  const encryptionService = new EncryptionService(config.agentId);
+  const toolHandler = new ToolHandler(supabaseService, encryptionService);
+
+  // Get service details
+  const serviceDetails = useTestService ? TEST_SERVICE : await promptForServiceDetails();
+  logger.info('Service details received:', serviceDetails);
+
+  // Make the tool call directly using the ToolHandler
+  const result = await toolHandler.handleToolCall('registerService', serviceDetails);
+  logger.info('Service registration successful:', result);
+
+  // Clean up
+  await toolHandler.cleanup();
+  process.exit(0);
 }
 
 // Run the main function if this file is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   const useTestService = process.argv[2] === '--test';
   registerService(useTestService).catch((error) => {
-    logger.error('Fatal error:', formatError(error));
+    if (error instanceof AppError) {
+      logger.error(error.message);
+    } else {
+      logger.error('Fatal error:', formatError(error));
+    }
     process.exit(1);
   });
 } 
