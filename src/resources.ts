@@ -1,6 +1,8 @@
 import { McpError, ErrorCode, Resource } from "@modelcontextprotocol/sdk/types.js";
 import { logger } from "./logger.js";
 import { ALL_TOOLS } from "./tools.js";
+import { AppError } from './errors/AppError.js';
+import { handleError } from './errors/errorHandler.js';
 
 /**
  * Define the default agent communication resource
@@ -100,7 +102,6 @@ export const RESOURCES = [
  * Handle list resources request
  */
 export function handleListResources(): Resource[] {
-  logger.info("Handling list resources request");
   return RESOURCES;
 }
 
@@ -110,14 +111,13 @@ export function handleListResources(): Resource[] {
  * @returns The resource metadata and content
  */
 export function handleReadResource(resourceUri: string): Resource {
-  logger.info(`Handling read resource request for ${resourceUri}`);
-  
   const resource = RESOURCES.find((r) => r.uri === resourceUri);
   
   if (!resource) {
-    throw new McpError(
-      ErrorCode.InvalidRequest,
-      `Resource not found: ${resourceUri}`
+    throw new AppError(
+      `Resource not found: ${resourceUri}`,
+      'RESOURCE_NOT_FOUND',
+      404
     );
   }
 

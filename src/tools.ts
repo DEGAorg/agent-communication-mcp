@@ -9,6 +9,8 @@ import { StateManager } from './state/manager.js';
 import { createPaymentNotificationMessage, createServiceFeedbackMessage } from './supabase/message-helper.js';
 import { ServiceContentStorage } from './storage/service-content.js';
 import { config } from './config.js';
+import { AppError } from './errors/AppError.js';
+import { handleError } from './errors/errorHandler.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -253,101 +255,122 @@ export class ToolHandler {
   }
 
   async handleToolCall(toolName: string, toolArgs: any): Promise<any> {
-    try {
-      // Ensure state manager is initialized
-      if (!this.stateManager) {
-        await this.initialize();
-      }
+    // Ensure state manager is initialized
+    if (!this.stateManager) {
+      await this.initialize();
+    }
 
-      // Ensure system is ready before handling any tool calls, with recovery attempt
-      if (!this.stateManager) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          'Failed to initialize state manager'
-        );
-      }
-      await this.stateManager.ensureReadyWithRecovery();
-
-      switch (toolName) {
-        case 'status':
-          return await this.handleStatus();
-        
-        case 'login':
-          return await this.handleLogin(toolArgs);
-        
-        case 'listServices':
-          return await this.handleListServices(toolArgs);
-        
-        case 'registerService':
-          return await this.handleRegisterService(toolArgs);
-        
-        case 'storeServiceContent':
-          return await this.handleStoreServiceContent(toolArgs);
-        
-        case 'servicePayment':
-          return await this.handleServicePayment(toolArgs);
-        
-        case 'queryServiceDelivery':
-          return await this.handleQueryServiceDelivery(toolArgs);
-        
-        case 'provideServiceFeedback':
-          return await this.handleProvideServiceFeedback(toolArgs);
-
-        case 'disableService':
-          return await this.handleDisableService(toolArgs);
-        
-        default:
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            `Unknown tool: ${toolName}`
-          );
-      }
-    } catch (error) {
-      logger.error({
-        msg: `Error handling tool call for ${toolName}`,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          toolName,
-          args: JSON.stringify(toolArgs)
-        }
-      });
-      
-      // If it's a system not ready error, provide more specific error code
-      if (error instanceof Error && error.message.includes('System not ready')) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          error.message
-        );
-      }
-      
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Error handling tool call for ${toolName}: ${error instanceof Error ? error.message : String(error)}`
+    // Ensure system is ready before handling any tool calls, with recovery attempt
+    if (!this.stateManager) {
+      throw new AppError(
+        'Failed to initialize state manager',
+        'INITIALIZATION_ERROR',
+        500
       );
+    }
+    await this.stateManager.ensureReadyWithRecovery();
+
+    switch (toolName) {
+      case 'status':
+        return await this.handleStatus();
+      
+      case 'login':
+        return await this.handleLogin(toolArgs);
+      
+      case 'listServices':
+        return await this.handleListServices(toolArgs);
+      
+      case 'registerService':
+        return await this.handleRegisterService(toolArgs);
+      
+      case 'storeServiceContent':
+        return await this.handleStoreServiceContent(toolArgs);
+      
+      case 'servicePayment':
+        return await this.handleServicePayment(toolArgs);
+      
+      case 'queryServiceDelivery':
+        return await this.handleQueryServiceDelivery(toolArgs);
+      
+      case 'provideServiceFeedback':
+        return await this.handleProvideServiceFeedback(toolArgs);
+
+      case 'disableService':
+        return await this.handleDisableService(toolArgs);
+      
+      default:
+        throw new AppError(
+          `Unknown tool: ${toolName}`,
+          'UNKNOWN_TOOL',
+          400
+        );
     }
   }
 
   private async handleStatus() {
-    try {
-      // Ensure state manager is initialized
-      if (!this.stateManager) {
-        await this.initialize();
+    // Get the current user ID from the auth service
+    const agentId = this.authService.getCurrentUserId();
+    const isAuthenticated = !!agentId;
+
+    // Get Supabase connection status
+    const supabaseStatus = await this.supabaseService.checkConnection();
+
+    // Get MCP state status
+    const mcpState = await this.stateManager!.getState();
+    const isReady = await this.stateManager!.isReady();
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            status: 'success',
+            mcp: {
+              ready: isReady,
+              state: mcpState,
+              needsLogin: !isAuthenticated,
+              suggestion: !isAuthenticated ? 'Please use the login tool to authenticate with the marketplace.' : null
+            },
+            marketplace: {
+              connected: supabaseStatus.connected,
+              status: supabaseStatus.status,
+              authenticated: supabaseStatus.authenticated,
+              authStatus: supabaseStatus.authStatus
+            },
+            agentStorageName: config.agentId,
+            timestamp: new Date().toISOString()
+          }, null, 2),
+          mimeType: 'application/json'
+        }
+      ]
+    };
+  }
+
+  private async handleLogin(args: { email: string; otpCode?: string; registrationConfirmed?: boolean }) {
+    const { email, otpCode, registrationConfirmed } = args;
+    
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new AppError(
+        'Invalid email format',
+        'INVALID_EMAIL',
+        400
+      );
+    }
+
+    // If OTP code is provided, verify it
+    if (otpCode) {
+      // Validate code format
+      if (!/^\d{6}$/.test(otpCode)) {
+        throw new AppError(
+          'Invalid verification code format. Must be 6 digits.',
+          'INVALID_OTP_FORMAT',
+          400
+        );
       }
 
-      // Get the current user ID from the auth service
-      const agentId = this.authService.getCurrentUserId();
-      const isAuthenticated = !!agentId;
-
-      // Get Supabase connection status
-      const supabaseStatus = await this.supabaseService.checkConnection();
-
-      // Get MCP state status
-      const mcpState = await this.stateManager!.getState();
-      const isReady = await this.stateManager!.isReady();
+      // Verify OTP
+      await this.authService.verifyOtp(email, otpCode);
 
       return {
         content: [
@@ -355,249 +378,97 @@ export class ToolHandler {
             type: 'text',
             text: JSON.stringify({
               status: 'success',
-              mcp: {
-                ready: isReady,
-                state: mcpState,
-                needsLogin: !isAuthenticated,
-                suggestion: !isAuthenticated ? 'Please use the login tool to authenticate with the marketplace.' : null
-              },
-              marketplace: {
-                connected: supabaseStatus.connected,
-                status: supabaseStatus.status,
-                authenticated: supabaseStatus.authenticated,
-                authStatus: supabaseStatus.authStatus
-              },
-              agentStorageName: config.agentId,
-              timestamp: new Date().toISOString()
+              message: 'Login completed successfully'
             }, null, 2),
             mimeType: 'application/json'
           }
         ]
       };
-    } catch (error) {
-      logger.error({
-        msg: 'Error checking status',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          timestamp: new Date().toISOString()
-        }
-      });
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to check status: ${error instanceof Error ? error.message : String(error)}`
-      );
     }
-  }
 
-  private async handleLogin(args: { email: string; otpCode?: string; registrationConfirmed?: boolean }) {
-    try {
-      const { email, otpCode, registrationConfirmed } = args;
-      
-      // Validate email format
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'Invalid email format'
-        );
-      }
-
-      // If OTP code is provided, verify it
-      if (otpCode) {
-        // Validate code format
-        if (!/^\d{6}$/.test(otpCode)) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            'Invalid verification code format. Must be 6 digits.'
-          );
-        }
-
-        // Verify OTP
-        await this.authService.verifyOtp(email, otpCode);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'success',
-                message: 'Login completed successfully'
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      }
-
-      // If registration was confirmed, send OTP
-      if (registrationConfirmed) {
-        await this.authService.signInWithOtp(email);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: 'success',
-                message: 'OTP code sent to your email. Please use the login tool again with the OTP code.',
-                email
-              }, null, 2),
-              mimeType: 'application/json'
-            }
-          ]
-        };
-      }
-
-      // Initial login attempt - will trigger either registration confirmation or OTP
+    // If registration was confirmed, send OTP
+    if (registrationConfirmed) {
       await this.authService.signInWithOtp(email);
-
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
-              status: 'pending',
-              message: 'Please check your email. You will receive either:',
-              instructions: [
-                '1. A registration confirmation email (if this is your first time)',
-                '2. An OTP code email (if you are already registered)',
-                '',
-                'If you receive a registration confirmation:',
-                '- Accept the registration by clicking the link in the email',
-                '- Wait 2 minutes for the system to process your registration',
-                '- Attempt login again with registrationConfirmed=true',
-                '',
-                'If you receive an OTP code:',
-                '- Please provide the 6-digit code and we will complete the login process'
-              ],
+              status: 'success',
+              message: 'OTP code sent to your email. Please use the login tool again with the OTP code.',
               email
             }, null, 2),
             mimeType: 'application/json'
           }
         ]
       };
-    } catch (error) {
-      logger.error({
-        msg: 'Error during login/registration',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          email: args.email,
-          hasOtpCode: !!args.otpCode,
-          registrationConfirmed: args.registrationConfirmed,
-          timestamp: new Date().toISOString()
-        }
-      });
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to process login/registration: ${error instanceof Error ? error.message : String(error)}`
-      );
     }
+
+    // Initial login attempt - will trigger either registration confirmation or OTP
+    await this.authService.signInWithOtp(email);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            status: 'pending',
+            message: 'Please check your email. You will receive either:',
+            instructions: [
+              '1. A registration confirmation email (if this is your first time)',
+              '2. An OTP code email (if you are already registered)',
+              '',
+              'If you receive a registration confirmation:',
+              '- Accept the registration by clicking the link in the email',
+              '- Wait 2 minutes for the system to process your registration',
+              '- Attempt login again with registrationConfirmed=true',
+              '',
+              'If you receive an OTP code:',
+              '- Please provide the 6-digit code and we will complete the login process'
+            ],
+            email
+          }, null, 2),
+          mimeType: 'application/json'
+        }
+      ]
+    };
   }
 
   private async handleListServices(args: ServiceFilters = {}) {
-    try {
-      logger.info({
-        msg: 'Starting handleListServices',
-        args: JSON.stringify(args),
-        context: {
-          agentId: this.authService.getCurrentUserId() || 'unknown',
-          timestamp: new Date().toISOString()
-        }
-      });
-
-      // Log pre-validation state
-      logger.info({
-        msg: 'Pre-validation state',
-        args: {
-          topics: args.topics,
-          minPrice: args.minPrice,
-          maxPrice: args.maxPrice,
-          serviceType: args.serviceType,
-          includeInactive: args.includeInactive
-        }
-      });
-
-      // Validate the filters
-      validateServiceFilters(args);
-
-      // Log post-validation state
-      logger.info({
-        msg: 'Post-validation state',
-        args: {
-          topics: args.topics,
-          minPrice: args.minPrice,
-          maxPrice: args.maxPrice,
-          serviceType: args.serviceType,
-          includeInactive: args.includeInactive
-        }
-      });
-
-      // Convert null values to undefined for the service call
-      const serviceArgs = {
-        ...args,
-        minPrice: args.minPrice ?? undefined,
-        maxPrice: args.maxPrice ?? undefined,
-        serviceType: args.serviceType ?? undefined
-      };
-
-      // Log pre-query state
-      logger.info({
-        msg: 'Pre-database query state',
-        serviceArgs: JSON.stringify(serviceArgs)
-      });
-
-      const services = await this.supabaseService.listServices(serviceArgs);
-
-      // Log post-query state
-      logger.info({
-        msg: 'Post-database query state',
-        servicesCount: services.length,
-        firstService: services.length > 0 ? services[0] : null
-      });
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              total: services.length,
-              services,
-              filters: args
-            }, null, 2),
-            mimeType: 'application/json'
-          }
-        ]
-      };
-    } catch (error) {
-      const context = {
-        agentId: this.authService.getCurrentUserId() || 'unknown',
-        filters: args,
-        errorType: error instanceof Error ? error.constructor.name : typeof error,
-        errorMessage: error instanceof Error ? error.message : String(error),
-        errorStack: error instanceof Error ? error.stack : undefined
-      };
-      
-      logger.error({
-        msg: 'Error listing services',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context
-      });
-      
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to list services: ${error instanceof Error ? error.message : String(error)}`
+    // Get the current user ID from the auth service
+    const agentId = this.authService.getCurrentUserId();
+    if (!agentId) {
+      throw new AppError(
+        'No authenticated agent found',
+        'AUTH_REQUIRED',
+        401
       );
     }
+
+    // Convert null values to undefined for the service call
+    const serviceArgs = {
+      ...args,
+      minPrice: args.minPrice ?? undefined,
+      maxPrice: args.maxPrice ?? undefined,
+      serviceType: args.serviceType ?? undefined
+    };
+
+    // Get services from Supabase
+    const services = await this.supabaseService.listServices(serviceArgs);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            total: services.length,
+            services,
+            filters: args
+          }, null, 2),
+          mimeType: 'application/json'
+        }
+      ]
+    };
   }
 
   private async handleRegisterService(args: Omit<Service, 'id' | 'agent_id'>) {
@@ -610,9 +481,10 @@ export class ToolHandler {
       // Get the current user ID from the auth service
       agentId = this.authService.getCurrentUserId();
       if (!agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'No authenticated agent found'
+        throw new AppError(
+          'No authenticated agent found',
+          'AUTH_REQUIRED',
+          401
         );
       }
 
@@ -633,23 +505,7 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error({
-        msg: 'Error registering service',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          agentId: agentId || 'unknown',
-          serviceData: JSON.stringify(args),
-          timestamp: new Date().toISOString()
-        }
-      });
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to register service: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw handleError('registering service', error);
     }
   }
 
@@ -660,30 +516,34 @@ export class ToolHandler {
     tags?: string[];
   }) {
     const { serviceId, content, version, tags = [] } = args;
+    let agentId: string | null = null;
 
     try {
       // Get the current user ID from the auth service
-      const agentId = this.authService.getCurrentUserId();
+      agentId = this.authService.getCurrentUserId();
       if (!agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'No authenticated agent found'
+        throw new AppError(
+          'No authenticated agent found',
+          'AUTH_REQUIRED',
+          401
         );
       }
 
-      // Verify the service exists and belongs to the agent
+      // Get service details to verify ownership
       const service = await this.supabaseService.getServiceById(serviceId);
       if (!service) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Service with ID ${serviceId} not found`
+        throw new AppError(
+          `Service with ID ${serviceId} not found`,
+          'SERVICE_NOT_FOUND',
+          404
         );
       }
 
       if (service.agent_id !== agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'You can only store content for your own services'
+        throw new AppError(
+          'You can only store content for your own services',
+          'UNAUTHORIZED',
+          403
         );
       }
 
@@ -697,7 +557,7 @@ export class ToolHandler {
         tags
       });
 
-      // Activate the service after content is stored
+      // Activate the service
       const { error: updateError } = await this.supabaseService.getSupabaseClient()
         .from('services')
         .update({ status: 'active' })
@@ -705,19 +565,11 @@ export class ToolHandler {
         .eq('agent_id', agentId);
 
       if (updateError) {
-        logger.error({
-          msg: 'Error activating service after content storage',
-          error: updateError.message,
-          details: updateError.details,
-          context: {
-            serviceId,
-            agentId,
-            timestamp: new Date().toISOString()
-          }
-        });
-        throw new McpError(
-          ErrorCode.InternalError,
-          'Failed to activate service after content storage'
+        throw new AppError(
+          'Failed to activate service after content storage',
+          'ACTIVATION_ERROR',
+          500,
+          updateError
         );
       }
 
@@ -736,58 +588,32 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error({
-        msg: 'Error storing service content',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          serviceId,
-          version,
-          contentLength: JSON.stringify(content).length,
-          timestamp: new Date().toISOString(),
-          errorDetails: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-            ...(error as any)
-          } : error
-        }
-      });
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to store service content: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw handleError('storing service content', error);
     }
   }
 
   private async handleServicePayment(args: { serviceId: string; amount: string; transactionId: string }) {
     const { serviceId, amount, transactionId } = args;
-    if (!serviceId || !amount || !transactionId) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'Missing required parameters: serviceId, amount, and transactionId'
-      );
-    }
+    let agentId: string | null = null;
 
     try {
       // Get the current user ID from the auth service
-      const agentId = this.authService.getCurrentUserId();
+      agentId = this.authService.getCurrentUserId();
       if (!agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'No authenticated agent found'
+        throw new AppError(
+          'No authenticated agent found',
+          'AUTH_REQUIRED',
+          401
         );
       }
 
-      // Get service details to find the service provider
+      // Get service details
       const service = await this.supabaseService.getServiceById(serviceId);
       if (!service) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Service with ID ${serviceId} not found`
+        throw new AppError(
+          `Service with ID ${serviceId} not found`,
+          'SERVICE_NOT_FOUND',
+          404
         );
       }
 
@@ -822,33 +648,17 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error({
-        msg: 'Error handling service payment',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          serviceId: args.serviceId,
-          transactionId: args.transactionId,
-          amount: args.amount,
-          timestamp: new Date().toISOString()
-        }
-      });
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to handle service payment: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw handleError('handling service payment', error);
     }
   }
 
   private async handleQueryServiceDelivery(args: { paymentMessageId: string; serviceId: string }) {
     const { paymentMessageId, serviceId } = args;
     if (!paymentMessageId || !serviceId) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'Missing required parameters: paymentMessageId and serviceId'
+      throw new AppError(
+        'Missing required parameters: paymentMessageId and serviceId',
+        'INVALID_PARAMS',
+        400
       );
     }
 
@@ -856,27 +666,30 @@ export class ToolHandler {
       // Get the current user ID from the auth service
       const agentId = this.authService.getCurrentUserId();
       if (!agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'No authenticated agent found'
+        throw new AppError(
+          'No authenticated agent found',
+          'AUTH_REQUIRED',
+          401
         );
       }
 
       // Get service details to find the service provider
       const service = await this.supabaseService.getServiceById(serviceId);
       if (!service) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Service with ID ${serviceId} not found`
+        throw new AppError(
+          `Service with ID ${serviceId} not found`,
+          'SERVICE_NOT_FOUND',
+          404
         );
       }
 
       // Verify the payment message belongs to the agent
       const paymentMessage = await this.supabaseService.getMessageById(paymentMessageId);
       if (!paymentMessage || paymentMessage.sender_agent_id !== agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'You can only query the delivery status of your own payment messages'
+        throw new AppError(
+          'You can only query the delivery status of your own payment messages',
+          'UNAUTHORIZED',
+          403
         );
       }
 
@@ -897,50 +710,41 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error({
-        msg: 'Error querying service delivery',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          paymentMessageId,
-          serviceId
-        }
-      });
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to query service delivery: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw handleError('querying service delivery', error);
     }
   }
 
   private async handleProvideServiceFeedback(args: { serviceId: string; rating: number; feedback: string; parentMessageId?: string }) {
     const { serviceId, rating, feedback, parentMessageId } = args;
-    if (!serviceId || !rating || !feedback) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'Missing required parameters: serviceId, rating, and feedback'
-      );
-    }
+    let agentId: string | null = null;
 
     try {
       // Get the current user ID from the auth service
-      const agentId = this.authService.getCurrentUserId();
+      agentId = this.authService.getCurrentUserId();
       if (!agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'No authenticated agent found'
+        throw new AppError(
+          'No authenticated agent found',
+          'AUTH_REQUIRED',
+          401
         );
       }
 
-      // Get service details to find the service provider
+      // Validate rating
+      if (rating < 1 || rating > 5) {
+        throw new AppError(
+          'Rating must be between 1 and 5',
+          'INVALID_RATING',
+          400
+        );
+      }
+
+      // Get service details
       const service = await this.supabaseService.getServiceById(serviceId);
       if (!service) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Service with ID ${serviceId} not found`
+        throw new AppError(
+          `Service with ID ${serviceId} not found`,
+          'SERVICE_NOT_FOUND',
+          404
         );
       }
 
@@ -976,53 +780,40 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error({
-        msg: 'Error providing service feedback',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          serviceId,
-          rating,
-          feedback,
-          parentMessageId
-        }
-      });
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to provide service feedback: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw handleError('providing service feedback', error);
     }
   }
 
   private async handleDisableService(args: { serviceId: string }) {
     const { serviceId } = args;
+    let agentId: string | null = null;
 
     try {
       // Get the current user ID from the auth service
-      const agentId = this.authService.getCurrentUserId();
+      agentId = this.authService.getCurrentUserId();
       if (!agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'No authenticated agent found'
+        throw new AppError(
+          'No authenticated agent found',
+          'AUTH_REQUIRED',
+          401
         );
       }
 
-      // Verify the service exists and belongs to the agent
+      // Get service details to verify ownership
       const service = await this.supabaseService.getServiceById(serviceId);
       if (!service) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Service with ID ${serviceId} not found`
+        throw new AppError(
+          `Service with ID ${serviceId} not found`,
+          'SERVICE_NOT_FOUND',
+          404
         );
       }
 
       if (service.agent_id !== agentId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          'You can only disable your own services'
+        throw new AppError(
+          'You can only disable your own services',
+          'UNAUTHORIZED',
+          403
         );
       }
 
@@ -1037,19 +828,11 @@ export class ToolHandler {
         .eq('agent_id', agentId);
 
       if (updateError) {
-        logger.error({
-          msg: 'Error disabling service',
-          error: updateError.message,
-          details: updateError.details,
-          context: {
-            serviceId,
-            agentId,
-            timestamp: new Date().toISOString()
-          }
-        });
-        throw new McpError(
-          ErrorCode.InternalError,
-          'Failed to disable service'
+        throw new AppError(
+          'Failed to disable service',
+          'DISABLE_ERROR',
+          500,
+          updateError
         );
       }
 
@@ -1069,22 +852,7 @@ export class ToolHandler {
         ]
       };
     } catch (error) {
-      logger.error({
-        msg: 'Error disabling service',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : String(error),
-        context: {
-          serviceId,
-          timestamp: new Date().toISOString()
-        }
-      });
-      if (error instanceof McpError) {
-        throw error;
-      }
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to disable service: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw handleError('disabling service', error);
     }
   }
 
