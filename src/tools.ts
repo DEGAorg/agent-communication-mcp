@@ -55,15 +55,15 @@ export const ALL_TOOLS = [
           description: 'Optional list of topics to filter services by'
         },
         minPrice: {
-          type: 'number',
+          type: ['number', 'null'],
           description: 'Optional minimum price filter'
         },
         maxPrice: {
-          type: 'number',
+          type: ['number', 'null'],
           description: 'Optional maximum price filter'
         },
         serviceType: {
-          type: 'string',
+          type: ['string', 'null'],
           description: 'Optional service type filter'
         },
         includeInactive: {
