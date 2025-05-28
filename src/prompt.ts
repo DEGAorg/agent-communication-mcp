@@ -77,17 +77,17 @@ export const PROMPTS: Record<string, PromptInfo> = {
     arguments: [
       {
         name: "name",
-        description: "Service name (3-100 chars, alphanumeric with spaces, hyphens, underscores)",
+        description: "Service name (3-100 chars alphanumeric with spaces)",
         required: true
       },
       {
         name: "type",
-        description: "Service type (3-50 chars, alphanumeric with underscores). Suggested types: AI_ANALYSIS, DATA_PROCESSING, API_INTEGRATION, COMPUTATION, STORAGE, CUSTOM",
+        description: "Service type (3-50 chars). Suggested types: AI_ANALYSIS, DATA_PROCESSING, API_INTEGRATION, COMPUTATION, STORAGE, CUSTOM",
         required: true
       },
       {
         name: "price",
-        description: "Service price (0 to 1,000,000)",
+        description: "Service price (0 to 1000000)",
         required: true
       },
       {
@@ -97,12 +97,12 @@ export const PROMPTS: Record<string, PromptInfo> = {
       },
       {
         name: "midnight_wallet_address",
-        description: "Your Midnight wallet address where you will receive payments (32+ chars, alphanumeric)",
+        description: "Your Midnight wallet address where you will receive payments",
         required: true
       },
       {
         name: "privacy_settings",
-        description: "Privacy settings for the service including overall privacy and terms & conditions",
+        description: "Privacy settings for the service including overall privacy (public or private)",
         required: true
       }
     ]
@@ -235,14 +235,14 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
               role: "user",
               content: {
                 type: "text",
-                text: "Please provide your email address for authentication."
+                text: "I'd like to login to the marketplace"
               }
             },
             {
               role: "assistant",
               content: {
                 type: "text",
-                text: "I'll help you authenticate. Please enter your email address."
+                text: "I'll help you login. Please provide your email address."
               }
             }
           ]
@@ -256,14 +256,14 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
               role: "user",
               content: {
                 type: "text",
-                text: `Please enter the OTP code sent to ${email}`
+                text: `Let's login with ${email}`
               }
             },
             {
               role: "assistant",
               content: {
                 type: "text",
-                text: "I'll verify your OTP code. Please enter the code you received."
+                text: `I'll help you login. I've sent a verification code to ${email}. Please check your email for the code or registration confirmation.`
               }
             }
           ]
@@ -276,7 +276,14 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
             role: "user",
             content: {
               type: "text",
-              text: `Authenticating with email ${email} and OTP code. ${registrationConfirmed ? "This is a new registration." : ""}`
+              text: `Here's the code: ${otpCode}`
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll verify your code and complete the login process."
             }
           }
         ]
@@ -284,23 +291,120 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
     }
 
     case "listServices": {
-      const topics = Array.isArray(args?.topics) ? args.topics as string[] : undefined;
-      const minPrice = typeof args?.minPrice === 'number' ? args.minPrice : undefined;
-      const maxPrice = typeof args?.maxPrice === 'number' ? args.maxPrice : undefined;
-      const serviceType = typeof args?.serviceType === 'string' ? args.serviceType : undefined;
-      const includeInactive = Boolean(args?.includeInactive);
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "What services are available in the marketplace?"
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll show you all available services in the marketplace."
+            }
+          }
+        ]
+      };
+    }
 
-      const filters = [
-        topics?.length && `in topics: ${topics.join(", ")}`,
-        minPrice && `with minimum price: ${minPrice}`,
-        maxPrice && `with maximum price: ${maxPrice}`,
-        serviceType && `of type: ${serviceType}`,
-        includeInactive && "including inactive services"
-      ].filter(Boolean);
+    case "registerService": {
+      const { name, type, price, address, privacySettings, serviceId } = (args as unknown) as {
+        name: string;
+        type: string;
+        price: number;
+        address: string;
+        privacySettings: string;
+        serviceId: string;
+      };
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "I want to register my new AI analysis service"
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll help you register your service. Please provide the service name, type, price, description, and your Midnight wallet address."
+            }
+          },
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Here are the details:\nName: ${name}\nType: ${type}\nPrice: ${price}\nWallet: ${address}\nPrivacy Settings: ${privacySettings}`
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: `Great! I've registered your service. Your service has been created with ID: ${serviceId}`
+            }
+          }
+        ]
+      };
+    }
 
-      const filterText = filters.length 
-        ? `Listing available services ${filters.join(", ")}`
-        : "Listing available services";
+    case "storeServiceContent": {
+      const { serviceId, content } = (args as unknown) as {
+        serviceId: string;
+        content: string;
+      };
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `I need to store the content for my AI analysis service, here is the content for service ${serviceId}: ${content}`
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll help you store the content."
+            }
+          }
+        ]
+      };
+    }
+
+    case "servicePayment": {
+      const { serviceId, amount, transactionId } = (args as unknown) as {
+        serviceId: string;
+        amount: number;
+        transactionId: string;
+      };
+      if (!serviceId || !amount || !transactionId) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "I want to purchase the AI analysis service"
+              }
+            },
+            {
+              role: "assistant",
+              content: {
+                type: "text",
+                text: "I'll help you complete the purchase. Please provide the service ID, payment amount, and the Midnight blockchain transaction ID."
+              }
+            }
+          ]
+        };
+      }
 
       return {
         messages: [
@@ -308,7 +412,103 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
             role: "user",
             content: {
               type: "text",
-              text: filterText
+              text: `I'd like to purchase the AI analysis service ${serviceId} with amount ${amount} and transaction ID ${transactionId}`
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll help you complete the purchase. Please wait a moment."
+            }
+          }
+        ]
+      };
+    }
+
+    case "queryServiceDelivery": {
+      const { paymentMessageId, serviceId } = (args as unknown) as {
+        paymentMessageId: string;
+        serviceId: string;
+      };
+
+      if (!paymentMessageId || !serviceId) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "Can you check the status of my recent service purchase?"
+              }
+            },
+            {
+              role: "assistant",
+              content: {
+                type: "text",
+                text: "I'll check the delivery status. Please provide the payment message ID and service ID."
+              }
+            }
+          ]
+        };
+      }
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `I'd like to check the status of my recent service purchase for service ${serviceId} with payment message ID ${paymentMessageId}`
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll check the delivery status. Please wait a moment."
+            }
+          }
+        ]
+      };
+    }
+
+    case "provideServiceFeedback": {
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "I'd like to leave feedback for the AI analysis service I used"
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll help you submit your feedback. Please provide the service ID, your rating (1-5), and your detailed feedback."
+            }
+          }
+        ]
+      };
+    }
+
+    case "disableService": {
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "I need to disable my AI analysis service"
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll help you disable the service. Please provide the service ID you want to disable."
             }
           }
         ]
@@ -322,7 +522,14 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
             role: "user",
             content: {
               type: "text",
-              text: `Checking status for agent`
+              text: "Can you check if I'm properly connected to the marketplace?"
+            }
+          },
+          {
+            role: "assistant",
+            content: {
+              type: "text",
+              text: "I'll check your connection status and authentication state in the marketplace."
             }
           }
         ]
