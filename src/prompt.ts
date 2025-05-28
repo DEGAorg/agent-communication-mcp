@@ -380,10 +380,11 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
     }
 
     case "servicePayment": {
-      const { serviceId, amount, transactionId } = (args as unknown) as {
+      const { serviceId, amount, transactionId, paymentMessageId } = (args as unknown) as {
         serviceId: string;
         amount: number;
         transactionId: string;
+        paymentMessageId: string;
       };
       if (!serviceId || !amount || !transactionId) {
         return {
@@ -400,6 +401,20 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
               content: {
                 type: "text",
                 text: "I'll help you complete the purchase. Please provide the service ID, payment amount, and the Midnight blockchain transaction ID."
+              }
+            },
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `I'd like to purchase the AI analysis service ${serviceId} with amount ${amount} and transaction ID ${transactionId}`
+              }
+            },
+            {
+              role: "assistant",
+              content: {
+                type: "text",
+                text: `I'll help you complete the purchase. Here is the payment message ID: ${paymentMessageId}`
               }
             }
           ]
@@ -419,7 +434,7 @@ export function getPrompt(request: GetPromptRequest): GetPromptResult {
             role: "assistant",
             content: {
               type: "text",
-              text: "I'll help you complete the purchase. Please wait a moment."
+              text: `I'll help you complete the purchase. Here is the payment message ID: ${paymentMessageId}`
             }
           }
         ]
