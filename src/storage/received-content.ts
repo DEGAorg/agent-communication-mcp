@@ -50,7 +50,7 @@ export class ReceivedContentStorage {
   /**
    * Retrieve received content
    */
-  public async getContent(agentId: string, paymentMessageId: string): Promise<ReceivedContent | null> {
+  public async getContent(agentId: string, serviceId: string, paymentMessageId: string): Promise<ReceivedContent | null> {
     const filename = `${paymentMessageId}.json`;
     
     try {
@@ -59,7 +59,10 @@ export class ReceivedContentStorage {
         agentId,
         filename
       );
-      return JSON.parse(content);
+      
+      const parsedContent = JSON.parse(content);
+
+      return parsedContent;
     } catch (error) {
       return null;
     }

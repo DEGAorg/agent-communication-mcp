@@ -514,7 +514,8 @@ export class SupabaseService {
     try {
       // First check if we have the content in local storage
       const receivedContentStorage = ReceivedContentStorage.getInstance();
-      const localContent = await receivedContentStorage.getContent(serviceId, paymentMessageId);
+      const agentId = this.getCurrentAgentId();
+      const localContent = await receivedContentStorage.getContent(agentId, serviceId, paymentMessageId);
       
       if (localContent) {
         return {
@@ -538,8 +539,9 @@ export class SupabaseService {
         contentData = deliveryMessage.public.content.data;
         version = deliveryMessage.public.content.metadata.version;
       } else if (hasPrivateContent(deliveryMessage) && hasEncryptedContent(deliveryMessage)) {
-        // Get the recipient's private key
-        const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
+        // Get the recipient's private key using EncryptionService
+        const encryptionService = new EncryptionService(this.getCurrentAgentId());
+        const recipientPrivateKey = encryptionService.getPrivateKey();
         
         // Get sender's public key
         const senderPublicKeyBase64 = await this.getAgentPublicKey(deliveryMessage.sender_agent_id);
@@ -549,7 +551,6 @@ export class SupabaseService {
         const senderPublicKey = Buffer.from(senderPublicKeyBase64, 'base64');
 
         // Decrypt the content
-        const encryptionService = new EncryptionService(config.agentId);
         const { publicMessage } = await encryptionService.decryptMessageAndCheckType(
           deliveryMessage.private.encryptedMessage!,
           deliveryMessage.private.encryptedKeys!.recipient,
