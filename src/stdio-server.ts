@@ -5,12 +5,12 @@ dotenv.config();
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
-  McpError,
-  ErrorCode,
   CallToolRequestSchema,
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './logger.js';
 import { ToolHandler } from './tools.js';
@@ -19,6 +19,7 @@ import { handleListResources, handleReadResource } from './resources.js';
 import { AuthService } from './supabase/auth.js';
 import { AppError } from './errors/AppError.js';
 import { handleError, formatErrorForResponse } from './errors/errorHandler.js';
+import { listPrompts, getPrompt } from './prompt.js';
 
 /**
  * Format error for logging
@@ -59,6 +60,7 @@ export async function createServer() {
       capabilities: {
         resources: {},
         tools: {},
+        prompts: {},
       },
     },
   );
@@ -170,6 +172,14 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
     } catch (error) {
       return handleError('listing tools', error);
     }
+  });
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    return listPrompts();
+  });
+  
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    return getPrompt(request);
   });
 
   // Handle global errors
