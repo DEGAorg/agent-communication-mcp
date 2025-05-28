@@ -52,8 +52,8 @@ export const ALL_TOOLS = [
       type: 'object',
       properties: {
         topics: {
-          type: 'array',
-          items: { type: ['string', 'null'] },
+          type: ['array','null'],
+          items: { type: ['string'] },
           description: 'Optional list of topics to filter services by'
         },
         minPrice: {
