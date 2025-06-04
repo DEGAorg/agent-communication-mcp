@@ -11,6 +11,7 @@ import { groth16 } from 'snarkjs';
 import { buildPoseidon } from 'circomlibjs';
 import fs from 'fs';
 import { AppError } from '../errors/AppError.js';
+import { verifyTransaction } from '../api/wallet-api.js';
 
 export class MessageHandler {
   private static instance: MessageHandler;
@@ -192,6 +193,19 @@ export class MessageHandler {
       }
     }
 
+    // Read transaction identifier from the payment message and call validator
+    const data = message.public?.content?.data || decryptedContent?.content?.data;
+    const transactionIdentifier = data?.transaction_id;
+    if (!transactionIdentifier) {
+      throw new Error('No transaction identifier found in payment message');
+    }
+
+    // Call wallet API to verify transaction
+    const isTxValid = await verifyTransaction(transactionIdentifier);
+    if (!isTxValid) {
+      throw new Error('Transaction identifier is not valid according to wallet API');
+    }
+
     // Get the stored service content
     const serviceContentStorage = ServiceContentStorage.getInstance();
     const serviceContent = await serviceContentStorage.getContent(service.agent_id, serviceId);
@@ -223,4 +237,4 @@ export class MessageHandler {
       parent_message_id: message.id
     });
   }
-} 
+}

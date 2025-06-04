@@ -30,7 +30,7 @@ if (result.error) {
 }
 
 // Define required environment variables
-const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'AGENT_ID'] as const;
+const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'AGENT_ID', 'WALLET_MCP_URL'] as const;
 
 // Validate required environment variables
 for (const envVar of requiredEnvVars) {
@@ -44,6 +44,7 @@ interface Config {
   supabaseUrl: string;
   supabaseAnonKey: string;
   agentId: string;
+  walletMcpUrl: string;
   port: number;
   nodeEnv: string;
   logLevel: string;
@@ -64,6 +65,9 @@ export const config: Config = {
   // Logging configuration
   logLevel: process.env.LOG_LEVEL || 'info',
   logFile: process.env.LOG_FILE || undefined,
+
+  // Wallet MCP URL
+  walletMcpUrl: process.env.WALLET_MCP_URL!,
 } as const;
 
 // Log configuration (without sensitive data)
