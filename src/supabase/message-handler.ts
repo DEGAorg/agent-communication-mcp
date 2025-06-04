@@ -196,45 +196,88 @@ export class MessageHandler {
     // Read transaction identifier from the payment message and call validator
     const data = message.public?.content?.data || decryptedContent?.content?.data;
     const transactionIdentifier = data?.transaction_id;
-    if (!transactionIdentifier) {
-      throw new Error('No transaction identifier found in payment message');
+    if (!transactionIdentifier || !data?.amount) {
+      throw new Error('No transaction identifier or amount found in payment message');
     }
 
-    // Call wallet API to verify transaction
-    const isTxValid = await verifyTransaction(transactionIdentifier);
+    // Start transaction verification process in background
+    this.verifyTransactionWithRetry(message, transactionIdentifier, data.amount, service)
+      .catch(error => {
+        logger.error('Error in background transaction verification', {
+          error,
+          transactionId: transactionIdentifier,
+          messageId: message.id
+        });
+      });
+
+    logger.info(`Payment message received and verification started for transaction ${transactionIdentifier}`);
+  }
+
+  private async verifyTransactionWithRetry(
+    message: Message & { private: EncryptedMessage },
+    transactionIdentifier: string,
+    amount: string,
+    service: any
+  ): Promise<void> {
+    const MAX_RETRY_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+    const RETRY_INTERVAL = 10 * 1000; // 10 seconds in milliseconds
+    const startTime = Date.now();
+    let isTxValid = false;
+
+    while (Date.now() - startTime < MAX_RETRY_TIME) {
+      isTxValid = await verifyTransaction(transactionIdentifier, amount);
+      if (isTxValid) {
+        break;
+      }
+      
+      logger.info(`Transaction ${transactionIdentifier} not yet valid, retrying in ${RETRY_INTERVAL/1000} seconds...`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL));
+    }
+
     if (!isTxValid) {
-      throw new Error('Transaction identifier is not valid according to wallet API');
+      logger.error(`Transaction ${transactionIdentifier} not valid after ${MAX_RETRY_TIME/1000/60} minutes of retrying`);
+      return;
     }
 
-    // Get the stored service content
-    const serviceContentStorage = ServiceContentStorage.getInstance();
-    const serviceContent = await serviceContentStorage.getContent(service.agent_id, serviceId);
-    
-    if (!serviceContent) {
-      throw new Error(`No content found for service ${serviceId}`);
+    try {
+      // Get the stored service content
+      const serviceContentStorage = ServiceContentStorage.getInstance();
+      const serviceContent = await serviceContentStorage.getContent(service.agent_id, service.id);
+      
+      if (!serviceContent) {
+        throw new Error(`No content found for service ${service.id}`);
+      }
+
+      // Create and send the delivery message
+      const deliveryMessage = await createServiceDeliveryMessage(
+        service.agent_id,
+        message.sender_agent_id,
+        service.id,
+        serviceContent.content,
+        serviceContent.version,
+        service.name,
+        service.privacy_settings,
+        message.id,
+        message.conversation_id
+      );
+
+      await this.supabaseService!.sendMessage(deliveryMessage);
+      
+      // Only mark as read after successful delivery
+      await this.supabaseService!.markMessageAsRead(message.id!);
+      
+      logger.info(`Service delivery triggered after successful payment verification for service ${service.id}`, {
+        conversation_id: message.conversation_id,
+        parent_message_id: message.id
+      });
+    } catch (error) {
+      logger.error('Error processing delivery after transaction verification', {
+        error,
+        transactionId: transactionIdentifier,
+        messageId: message.id
+      });
+      // Don't mark as read if there was an error
+      throw error;
     }
-
-    // Create and send the delivery message
-    const deliveryMessage = await createServiceDeliveryMessage(
-      service.agent_id, // sender is the service provider
-      message.sender_agent_id, // recipient is the payment sender
-      serviceId,
-      serviceContent.content,
-      serviceContent.version,
-      service.name,
-      service.privacy_settings,
-      message.id, // Set parent_message_id to the payment message
-      message.conversation_id // Use the same conversation_id as the payment message
-    );
-
-    await this.supabaseService!.sendMessage(deliveryMessage);
-    
-    // Mark payment message as read after successful processing and delivery message sent
-    await this.supabaseService!.markMessageAsRead(message.id!);
-
-    logger.info(`Service delivery triggered automatically after payment for service ${serviceId}`, {
-      conversation_id: message.conversation_id,
-      parent_message_id: message.id
-    });
   }
 }

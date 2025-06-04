@@ -4,7 +4,23 @@ import http from 'http';
 import https from 'https';
 import { URL } from 'url';
 
-export async function verifyTransaction(transactionId: string): Promise<boolean> {
+/**
+ * Transaction verification result
+ */
+export interface TransactionVerificationResult {
+  exists: boolean;
+  syncStatus: {
+    syncedIndices: string;
+    lag: {
+      applyGap: string;
+      sourceGap: string;
+    };
+    isFullySynced: boolean;
+  },
+  transactionAmount: string;
+}
+
+export async function verifyTransaction(transactionId: string, amount: string): Promise<boolean> {
   if (!config.walletMcpUrl) {
     logger.error('WALLET_MCP_URL is not set in environment variables');
     return false;
@@ -31,8 +47,10 @@ export async function verifyTransaction(transactionId: string): Promise<boolean>
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
           try {
-            const json = JSON.parse(data);
-            resolve(!!json.valid);
+            const result = JSON.parse(data) as TransactionVerificationResult;
+            // Check if transaction exists and amount matches
+            const isValid = result.exists && result.transactionAmount === amount;
+            resolve(isValid);
           } catch (err) {
             logger.error('Failed to parse wallet API response', { err, data });
             resolve(false);
