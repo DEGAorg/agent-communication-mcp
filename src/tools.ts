@@ -11,6 +11,8 @@ import { ServiceContentStorage } from './storage/service-content.js';
 import { config } from './config.js';
 import { AppError } from './errors/AppError.js';
 import { handleError } from './errors/errorHandler.js';
+import { sendFunds } from './api/wallet-api.js';
+import { generateValidRandomAmount } from './utils/wallet-service.js';
 
 // Define tools with their schemas
 export const ALL_TOOLS = [
@@ -158,7 +160,7 @@ export const ALL_TOOLS = [
   },
   {
     name: 'servicePayment',
-    description: 'Initiate a service purchase or hiring by sending a payment notification. This tool is used by agents who want to purchase or hire a service from another agent. You must provide the service ID (from listServices), payment amount (from service details), and the Midnight blockchain transaction ID (from midnight-mcp tool). This will trigger the service delivery process once the payment is confirmed. The returned payment message ID is required for subsequent operations like queryServiceDelivery.',
+    description: 'Initiate a service purchase. The system will automatically handle the payment transaction and send the payment notification to the service provider. The returned payment message ID is required for subsequent operations like queryServiceDelivery.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -169,13 +171,9 @@ export const ALL_TOOLS = [
         amount: { 
           type: 'string',
           description: 'Payment amount (must match service price)'
-        },
-        transactionId: { 
-          type: 'string', 
-          description: 'The Midnight blockchain transaction identifier (obtained from midnight-mcp tool)'
         }
       },
-      required: ['serviceId', 'amount', 'transactionId']
+      required: ['serviceId', 'amount']
     }
   },
   {
@@ -607,8 +605,8 @@ export class ToolHandler {
     }
   }
 
-  private async handleServicePayment(args: { serviceId: string; amount: string; transactionId: string }) {
-    const { serviceId, amount, transactionId } = args;
+  private async handleServicePayment(args: { serviceId: string;}) {
+    const { serviceId } = args;
     let agentId: string | null = null;
 
     try {
@@ -632,14 +630,48 @@ export class ToolHandler {
         );
       }
 
+      // Parse base amount
+      const baseAmount = service.price;
+      if (isNaN(baseAmount)) {
+        throw new AppError(
+          'Invalid amount format',
+          'INVALID_AMOUNT',
+          400
+        );
+      }
+
+      // Generate valid random amount with retries
+      let amountWithDecimals: string;
+      try {
+        amountWithDecimals = generateValidRandomAmount(baseAmount);
+        logger.info(`Generated random amount for payment: ${amountWithDecimals} (base: ${baseAmount})`);
+      } catch (error) {
+        logger.error('Failed to generate valid random amount', { error, baseAmount });
+        throw new AppError(
+          'Internal error generating payment amount',
+          'INTERNAL_ERROR',
+          500
+        );
+      }
+
+      // Send funds to the service provider
+      const sendResult = await sendFunds(service.midnight_wallet_address, amountWithDecimals);
+      if (!sendResult.success) {
+        throw new AppError(
+          `Failed to send funds: ${sendResult.error}`,
+          'PAYMENT_FAILED',
+          500
+        );
+      }
+
       // Create and send the payment notification message
       const message = await createPaymentNotificationMessage(
         agentId,
         service.agent_id,
         serviceId,
-        amount,
+        amountWithDecimals,
         service.name,
-        transactionId,
+        sendResult.transactionId!,
         service.privacy_settings
       );
 
@@ -654,8 +686,9 @@ export class ToolHandler {
               status: 'success',
               message: 'Payment notification sent successfully',
               serviceId,
-              amount,
-              transactionId,
+              baseAmount,
+              actualAmount: amountWithDecimals,
+              transactionId: sendResult.transactionId,
               paymentMessageId: sentMessage.id
             }, null, 2),
             mimeType: 'application/json'

@@ -11,7 +11,7 @@ import { groth16 } from 'snarkjs';
 import { buildPoseidon } from 'circomlibjs';
 import fs from 'fs';
 import { AppError } from '../errors/AppError.js';
-import { verifyTransaction } from '../api/wallet-api.js';
+import { verifyTransaction, sendFunds } from '../api/wallet-api.js';
 
 export class MessageHandler {
   private static instance: MessageHandler;
@@ -193,24 +193,23 @@ export class MessageHandler {
       }
     }
 
-    // Read transaction identifier from the payment message and call validator
+    // Read payment details from the message
     const data = message.public?.content?.data || decryptedContent?.content?.data;
-    const transactionIdentifier = data?.transaction_id;
-    if (!transactionIdentifier || !data?.amount) {
-      throw new Error('No transaction identifier or amount found in payment message');
+    if (!data?.amount || !data?.transaction_id) {
+      throw new Error('No amount or transaction ID found in payment message');
     }
 
     // Start transaction verification process in background
-    this.verifyTransactionWithRetry(message, transactionIdentifier, data.amount, service)
+    this.verifyTransactionWithRetry(message, data.transaction_id, data.amount, service)
       .catch(error => {
         logger.error('Error in background transaction verification', {
           error,
-          transactionId: transactionIdentifier,
+          transactionId: data.transaction_id,
           messageId: message.id
         });
       });
 
-    logger.info(`Payment message received and verification started for transaction ${transactionIdentifier}`);
+    logger.info(`Payment message received and verification started for transaction ${data.transaction_id}`);
   }
 
   private async verifyTransactionWithRetry(

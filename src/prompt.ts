@@ -135,7 +135,7 @@ export const PROMPTS: Record<string, PromptInfo> = {
   },
   "servicePayment": {
     name: "servicePayment",
-    description: "Initiate a service purchase by sending a payment notification",
+    description: "Initiate a service purchase. The system will automatically handle the payment transaction and send the payment notification to the service provider.",
     arguments: [
       {
         name: "serviceId",
@@ -145,11 +145,6 @@ export const PROMPTS: Record<string, PromptInfo> = {
       {
         name: "amount",
         description: "Payment amount (must match service price)",
-        required: true
-      },
-      {
-        name: "transactionId",
-        description: "The Midnight blockchain transaction identifier",
         required: true
       }
     ]
