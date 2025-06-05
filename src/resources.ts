@@ -72,10 +72,11 @@ export const SERVICE_CONTENT_RESOURCE: Resource = {
 export const SERVICE_PAYMENT_RESOURCE: Resource = {
   uri: "agent://service-payment",
   name: "Service Payment Processing",
-  description: "Process payments for services using the Midnight blockchain",
+  description: "Process payments for services. The system will automatically handle the payment transaction and send the payment notification to the service provider.",
   mimeType: "application/json",
   content: JSON.stringify({
-    required_fields: ["service_id", "amount", "transaction_id"]
+    required_fields: ["service_id", "amount"],
+    note: "The system will automatically handle the payment transaction and generate a unique transaction ID"
   })
 };
 
