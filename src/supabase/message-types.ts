@@ -25,10 +25,24 @@ export const SERVICE_PRIVACY_LEVELS = {
   PRIVATE: 'private'
 } as const;
 
+export const TRANSACTION_TYPES = {
+  PAYMENT_NOTIFICATION: 'payment_notification',
+  SERVICE_DELIVERY: 'service_delivery',
+  PAYMENT_CONFIRMATION: 'payment_confirmation'
+} as const;
+
+export const MESSAGE_PURPOSE = {
+  PAYMENT_NOTIFICATION: 'payment_notification',
+  SERVICE_DELIVERY: 'service_delivery',
+  PAYMENT_CONFIRMATION: 'payment_confirmation'
+} as const;
+
 export type MessageTopic = typeof MESSAGE_TOPICS[keyof typeof MESSAGE_TOPICS];
 export type ContentType = typeof CONTENT_TYPES[keyof typeof CONTENT_TYPES];
 export type MessageStatus = typeof MESSAGE_STATUS[keyof typeof MESSAGE_STATUS];
 export type ServicePrivacyLevel = typeof SERVICE_PRIVACY_LEVELS[keyof typeof SERVICE_PRIVACY_LEVELS];
+export type TransactionType = typeof TRANSACTION_TYPES[keyof typeof TRANSACTION_TYPES];
+export type MessagePurpose = typeof MESSAGE_PURPOSE[keyof typeof MESSAGE_PURPOSE];
 
 // Message type definitions
 export interface MessageMetadata {
