@@ -1,4 +1,4 @@
-import { AppError, formatError } from '../src/errors/AppError.js';
+import { AppError, formatError } from '../../src/errors/AppError.js';
 
 describe('AppError', () => {
   describe('constructor', () => {
