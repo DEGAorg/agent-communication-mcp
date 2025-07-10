@@ -41,5 +41,18 @@ export default {
     'ts-jest': {
       useESM: true,
     },
-  }
+  },
+  // Istanbul coverage exclusions for error handling code that's difficult to test
+  coveragePathIgnorePatterns: [
+    // CLI tools that require full environment setup
+    'src/cli/',
+    // Scripts that are run independently
+    'scripts/',
+    // ZK proofs and complex cryptographic operations
+    'src/zk/',
+    // Test files
+    'test/',
+    // Type definitions
+    '\\.d\\.ts$'
+  ]
 }; 

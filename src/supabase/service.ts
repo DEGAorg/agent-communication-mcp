@@ -3,18 +3,13 @@ import { supabase, TABLES, Agent, Service, Message, MessageCreate } from './conf
 import { logger } from '../logger.js';
 import { MessageHandler } from './message-handler.js';
 import { AuthService } from './auth.js';
-import { createClient } from '@supabase/supabase-js';
 import { 
-  MESSAGE_TOPICS, 
-  CONTENT_TYPES, 
-  MESSAGE_STATUS,
   hasPublicContent,
   hasPrivateContent,
   hasEncryptedContent
 } from './message-types.js';
 import { ReceivedContentStorage } from '../storage/received-content.js';
 import { EncryptionService } from '../encryption/service.js';
-import { config } from '../config.js';
 
 export class SupabaseService {
   private static instance: SupabaseService;
