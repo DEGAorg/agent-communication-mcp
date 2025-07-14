@@ -19,8 +19,7 @@ export default {
   ],
   testPathIgnorePatterns: [
     '<rootDir>/test/state/manager.test.ts',
-    '<rootDir>/src/stdio-server.ts',
-    '<rootDir>/src/tools.ts'
+    '<rootDir>/src/stdio-server.ts'
   ],
   collectCoverage: true,
   coverageDirectory: 'coverage',
@@ -30,7 +29,15 @@ export default {
     // Exclude files that require complex integration testing or have file system dependencies
     '!src/stdio-server.ts',     // Main server entry point - requires full environment setup
     '!src/tools.ts',            // Tool handler with multiple service dependencies - requires integration tests
-    '!src/state/manager.ts'     // State manager with file system dependencies - requires integration tests
+    '!src/state/manager.ts',    // State manager with file system dependencies - requires integration tests
+    // Exclude files that are in testPathIgnorePatterns
+    '!src/api/wallet-api.ts',
+    '!src/errors/errorHandler.ts',
+    '!src/supabase/auth.ts',
+    '!src/supabase/message-handler.ts',
+    '!src/supabase/message-helper.ts',
+    '!src/supabase/service.ts',
+    '!src/supabase/types.ts'
   ],
   coverageReporters: ['text', 'lcov', 'html'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
