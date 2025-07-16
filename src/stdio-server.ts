@@ -20,16 +20,9 @@ import { AuthService } from './supabase/auth.js';
 import { AppError } from './errors/AppError.js';
 import { handleError, formatErrorForResponse } from './errors/errorHandler.js';
 import { listPrompts, getPrompt } from './prompt.js';
-
-/**
- * Format error for logging
- */
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return `${error.name}: ${error.message}`;
-  }
-  return String(error);
-}
+import { formatError } from './utils/error-formatter.js';
+import { isAuthRequired } from './utils/auth-guard.js';
+import { getDefaultServerConfig } from './utils/server-config.js';
 
 /**
  * Create and configure MCP server
@@ -106,16 +99,7 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
       logger.info(`Tool call received: ${toolName}`);
       
       // Check if tool requires authentication
-      const authRequiredTools = [
-        'listServices',
-        'registerService',
-        'storeServiceContent',
-        'servicePayment',
-        'queryServiceDelivery',
-        'provideServiceFeedback'
-      ];
-
-      if (authRequiredTools.includes(toolName)) {
+      if (isAuthRequired(toolName)) {
         const authService = AuthService.getInstance();
         if (!authService.isAuthenticated()) {
           throw new AppError(
