@@ -4,14 +4,19 @@ A Model Context Protocol (MCP) server implementation that enables secure, agent-
 
 This project implements a hybrid encryption scheme combining AES-256-GCM and X25519 key exchange, with zero-knowledge proof capabilities for selective data disclosure and audit trails.
 
-## Quick Start
-
-### Prerequisites
+## Prerequisites
 - Node.js 22.15.0 LTS or later
 - Yarn 4.1.0
 - Supabase account and project
 
-### Setup
+## Quick Start
+
+⚠️ **Before using the MCP, the agent must call `/status` and complete authentication.**
+
+The agent must authenticate via the login endpoint before accessing any marketplace functionality (listing services, payments, messaging, etc.).
+
+## Setup
+
 1. Install dependencies:
 ```bash
 yarn install
@@ -23,26 +28,30 @@ cp doc/env.example .env
 ```
 Edit `.env` with your Supabase credentials and agent configuration.
 
-3. Set up authentication:
-```bash
-yarn auth:setup
-```
-
-4. Generate encryption keys:
+3. Configure Encryption Keys
 ```bash
 yarn keys:generate
 ```
 
-### Run
+## Local Development
+
+### STDIO Server
+This command is for testing TypeScript compilation only. The STDIO server is automatically started by ElizaOS and should not be run manually.
 ```bash
-# Development server
-yarn dev
-
-# STDIO server
 yarn dev:stdio
+```
 
-# Production build
-yarn build && yarn start
+### Testing
+```bash
+yarn test
+```
+
+## Production Deployment
+
+### Build and Start
+This command builds the production distribution. The server process is automatically managed by ElizaOS and should not be started manually.
+```bash
+yarn build
 ```
 
 ## Directory Structure
@@ -54,25 +63,6 @@ yarn build && yarn start
 ├── scripts/       # Build and setup scripts
 ├── supabase/      # Database migrations
 └── storage/       # Local storage
-```
-
-## Development
-
-```bash
-# Run development server
-yarn dev
-
-# Run tests
-yarn test
-
-# Run tests with coverage
-yarn test:coverage
-
-# Lint code
-yarn lint
-
-# Format code
-yarn format
 ```
 
 ## Documentation

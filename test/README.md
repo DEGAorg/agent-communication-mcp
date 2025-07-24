@@ -140,9 +140,6 @@ Tests received content handling:
 # Run all tests
 yarn test
 
-# Run tests in watch mode
-yarn test:watch
-
 # Run tests with coverage
 yarn test:coverage
 
@@ -183,15 +180,6 @@ The test suite requires the following environment variables (automatically set i
 - Custom matchers for complex objects
 - Error throwing validation
 - Async operation testing
-
-## Contributing
-
-When adding new tests:
-1. Follow the existing naming conventions
-2. Include both positive and negative test cases
-3. Mock external dependencies appropriately
-4. Add tests for error conditions
-5. Update this README if adding new test categories
 
 ## Troubleshooting
 

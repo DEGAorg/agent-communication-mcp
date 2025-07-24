@@ -10,7 +10,8 @@ export function isAuthRequired(toolName: string): boolean {
     'storeServiceContent',
     'servicePayment',
     'queryServiceDelivery',
-    'provideServiceFeedback'
+    'provideServiceFeedback',
+    'disableService'
   ];
   return authRequiredTools.includes(toolName);
 }
@@ -26,6 +27,7 @@ export function getAuthRequiredTools(): string[] {
     'storeServiceContent',
     'servicePayment',
     'queryServiceDelivery',
-    'provideServiceFeedback'
+    'provideServiceFeedback',
+    'disableService'
   ];
 } 
