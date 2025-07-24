@@ -1,156 +1,94 @@
 # Agent Communication MCP Server
 
-A Model Context Protocol (MCP) server implementation that enables secure, agent-to-agent communication for AI networks using Supabase for real-time messaging. The system provides encrypted message exchange, service discovery, and privacy-preserving data delivery.
+A Model Context Protocol (MCP) server implementation that enables secure, agent-to-agent communication for AI networks using Supabase for real-time messaging. The system provides encrypted message exchange, service discovery, and privacy-preserving data delivery with support for Midnight blockchain integration.
 
-## Documentation
+This project implements a hybrid encryption scheme combining AES-256-GCM and X25519 key exchange, with zero-knowledge proof capabilities for selective data disclosure and audit trails.
 
-- [System Overview](doc/documentation.md) - Detailed system architecture and features
-- [Message Format](doc/message.md) - Message structure and format specifications
-- [Cryptography](doc/cryptography.md) - Security and encryption details
-- [Entity Relations](doc/entity_relation.mmd) - Database schema and relationships
-- [Component Diagram](doc/components.mmd) - System component interactions
-- [Message Sequence](doc/message_sequence.mmd) - Message flow diagrams
+## Quick Start
 
-## Prerequisites
-
+### Prerequisites
 - Node.js 22.15.0 LTS or later
 - Yarn 4.1.0
 - Supabase account and project
 
-## Setup
-
+### Setup
 1. Install dependencies:
 ```bash
 yarn install
 ```
 
-2. Create a `.env` file in the project root with your Supabase credentials:
+2. Configure environment:
 ```bash
 cp doc/env.example .env
 ```
+Edit `.env` with your Supabase credentials and agent configuration.
 
-Then edit the `.env` file with your credentials:
-```env
-MCP_AUTH_EMAIL=your.email@example.com
-```
-
-## Key Management
-
-The system uses X25519 key pairs for secure communication. Each agent needs its own key pair.
-
-### Setup Agent
-
-Set up a new agent with encryption keys:
+3. Set up authentication:
 ```bash
-yarn setup:agent -a <agent-id> [-d <directory>]
+yarn auth:setup
 ```
 
-This will:
-- Create the necessary directory structure
-- Generate a new X25519 key pair
-- Save the keys in the encryption directory
-- Set appropriate file permissions
-
-Example:
-```bash
-yarn setup:agent -a midnight-agent -d /home/cerrato/mnai/midnight-agent
-```
-
-The keys will be saved as:
-- `<directory>/.storage/encryption/<agent-id>/public.key`
-- `<directory>/.storage/encryption/<agent-id>/private.key`
-
-### Generate Key Pair
-
-Generate a new X25519 key pair:
+4. Generate encryption keys:
 ```bash
 yarn keys:generate
 ```
 
-This will:
-- Generate a new X25519 key pair
-- Display the public and private keys
-- Provide instructions for adding them to your `.env` file
-
-Add the generated keys to your `.env` file:
-```env
-AGENT_PUBLIC_KEY=your_public_key
-AGENT_PRIVATE_KEY=your_private_key
-```
-
-⚠️ **Security Warning**:
-- Keep your private key secure and never share it
-- Never commit keys to version control
-- Keep a secure backup of your keys
-- Store keys in environment variables or secure key management system
-
-## Authentication
-
-The MCP server uses Supabase's magic link authentication. Sessions are stored locally in the `session` directory.
-
-### Setup Authentication
-
-1. Set up your authentication:
+### Run
 ```bash
-yarn auth:setup
-```
-This will:
-- Prompt for your email
-- Send a magic link to your email
-- Wait for you to click the link
-- Save the session for future use
+# Development server
+yarn dev
 
-2. Check authentication status:
-```bash
-yarn auth:check
+# STDIO server
+yarn dev:stdio
+
+# Production build
+yarn build && yarn start
 ```
 
-3. If authentication fails, retry:
-```bash
-yarn auth:retry
+## Directory Structure
+
 ```
-
-### Environment Variables
-
-- `MCP_AUTH_EMAIL`: Your email for authentication
-- `MCP_AUTH_POLL_INTERVAL`: Polling interval in milliseconds (default: 2000)
-- `MCP_AUTH_MAX_POLL_ATTEMPTS`: Maximum polling attempts (default: 30)
+├── doc/           # System documentation and diagrams
+├── src/           # Source code
+├── test/          # Test suite
+├── scripts/       # Build and setup scripts
+├── supabase/      # Database migrations
+└── storage/       # Local storage
+```
 
 ## Development
 
-- Start the development server:
 ```bash
+# Run development server
 yarn dev
+
+# Run tests
+yarn test
+
+# Run tests with coverage
+yarn test:coverage
+
+# Lint code
+yarn lint
+
+# Format code
+yarn format
 ```
 
-- Start the stdio server:
-```bash
-yarn dev:stdio
-```
+## Documentation
+
+- **[System Architecture](doc/system-design.md)** - Detailed system overview, MCP tools, and features
+- **[Message Format](doc/message.md)** - Message structure and format specifications
+- **[Cryptography](doc/cryptography.md)** - Security and encryption implementation
+- **[Database Schema](doc/database/README.md)** - Database setup and schema documentation
 
 ## Testing
 
-- Run all tests:
-```bash
-yarn test
-```
+Comprehensive test suite covering all major components. See **[Test Documentation](test/README.md)** for detailed testing information, patterns, and troubleshooting.
 
-- Run tests in watch mode:
-```bash
-yarn test:watch
-```
+## Deployment
 
-- Generate test coverage:
-```bash
-yarn test:coverage
-```
-
-## Building
-
-Build the project:
-```bash
-yarn build
-```
+*Deployment documentation coming soon. See [doc/system-design.md](doc/system-design.md) for system architecture details.*
 
 ## License
 

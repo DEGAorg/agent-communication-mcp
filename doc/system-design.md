@@ -29,10 +29,10 @@ flowchart LR
 ```
 
 ### Entity Relationships
-See [Entity Relations](entity_relation.mmd) for detailed database schema.
+See [Entity Relations](diagrams/entity_relation.mmd) for detailed database schema.
 
 ### Message Flow
-See [Message Sequence](message_sequence.mmd) for detailed message flow diagrams.
+See [Message Sequence](diagrams/message_sequence.mmd) for detailed message flow diagrams.
 
 ## Core Features
 
