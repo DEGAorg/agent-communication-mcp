@@ -1,6 +1,8 @@
 import { McpError, ErrorCode, Resource } from "@modelcontextprotocol/sdk/types.js";
 import { logger } from "./logger.js";
 import { ALL_TOOLS } from "./tools.js";
+import { AppError } from './errors/AppError.js';
+import { handleError } from './errors/errorHandler.js';
 
 /**
  * Define the default agent communication resource
@@ -8,8 +10,20 @@ import { ALL_TOOLS } from "./tools.js";
 export const DEFAULT_AGENT_RESOURCE: Resource = {
   uri: "agent://info",
   name: "Agent Communication Information",
-  description: "Core information about the agent's communication capabilities, including service marketplace features, payment processing, and secure content delivery",
-  mimeType: "application/json"
+  description: "Core information about the agent's communication capabilities and state",
+  mimeType: "application/json",
+  content: JSON.stringify({
+    capabilities: {
+      marketplace: true,
+      authentication: true,
+      payment: true,
+      content: true
+    },
+    state: {
+      requires_authentication: true,
+      requires_midnight_wallet: true
+    }
+  })
 };
 
 /**
@@ -18,8 +32,12 @@ export const DEFAULT_AGENT_RESOURCE: Resource = {
 export const SERVICES_LIST_RESOURCE: Resource = {
   uri: "agent://services",
   name: "Service Marketplace",
-  description: "Browse and search the service marketplace. Filter services by topics, price range, or service type. Each service listing includes name, type, price, description, and privacy settings",
-  mimeType: "application/json"
+  description: "Browse and search the service marketplace. Filter services by topics, price range, or service type",
+  mimeType: "application/json",
+  content: JSON.stringify({
+    filters: ["topics", "price_range", "service_type", "status"],
+    service_types: ["AI_ANALYSIS", "DATA_PROCESSING", "API_INTEGRATION", "COMPUTATION", "STORAGE", "CUSTOM"]
+  })
 };
 
 /**
@@ -28,8 +46,11 @@ export const SERVICES_LIST_RESOURCE: Resource = {
 export const SERVICE_REGISTRATION_RESOURCE: Resource = {
   uri: "agent://service-registration",
   name: "Service Provider Portal",
-  description: "Register and manage your services in the marketplace. Define service details, pricing, and privacy settings. This resource allows service providers to create and update their service offerings",
-  mimeType: "application/json"
+  description: "Register and manage services in the marketplace",
+  mimeType: "application/json",
+  content: JSON.stringify({
+    required_fields: ["name", "type", "price", "description", "privacy_settings"]
+  })
 };
 
 /**
@@ -38,8 +59,11 @@ export const SERVICE_REGISTRATION_RESOURCE: Resource = {
 export const SERVICE_CONTENT_RESOURCE: Resource = {
   uri: "agent://service-content",
   name: "Service Content Management",
-  description: "Manage the content that will be delivered to customers when they purchase your service. Store, version, and tag your service content securely",
-  mimeType: "application/json"
+  description: "Manage service content delivery and storage",
+  mimeType: "application/json",
+  content: JSON.stringify({
+    required_fields: ["service_id", "content", "version"]
+  })
 };
 
 /**
@@ -48,8 +72,12 @@ export const SERVICE_CONTENT_RESOURCE: Resource = {
 export const SERVICE_PAYMENT_RESOURCE: Resource = {
   uri: "agent://service-payment",
   name: "Service Payment Processing",
-  description: "Process payments for services using the Midnight blockchain. This resource handles payment notifications, transaction verification, and initiates the service delivery process",
-  mimeType: "application/json"
+  description: "Process payments for services. The system will automatically handle the payment transaction and send the payment notification to the service provider.",
+  mimeType: "application/json",
+  content: JSON.stringify({
+    required_fields: ["service_id", "amount"],
+    note: "The system will automatically handle the payment transaction and generate a unique transaction ID"
+  })
 };
 
 /**
@@ -58,8 +86,11 @@ export const SERVICE_PAYMENT_RESOURCE: Resource = {
 export const SERVICE_DELIVERY_RESOURCE: Resource = {
   uri: "agent://service-delivery",
   name: "Service Delivery Management",
-  description: "Track and manage service deliveries. Check delivery status, retrieve service content, and verify successful delivery of purchased services",
-  mimeType: "application/json"
+  description: "Track and manage service deliveries",
+  mimeType: "application/json",
+  content: JSON.stringify({
+    required_fields: ["payment_message_id", "service_id"]
+  })
 };
 
 /**
@@ -68,8 +99,11 @@ export const SERVICE_DELIVERY_RESOURCE: Resource = {
 export const DATA_REVELATION_RESOURCE: Resource = {
   uri: "agent://data-revelation",
   name: "Secure Data Revelation",
-  description: "Securely reveal encrypted service content to authorized recipients. This resource handles the decryption and delivery of sensitive service data",
-  mimeType: "application/json"
+  description: "Securely reveal encrypted service content to authorized recipients",
+  mimeType: "application/json",
+  content: JSON.stringify({
+    security_features: ["encryption", "access_control", "privacy_settings"]
+  })
 };
 
 /**
@@ -78,8 +112,11 @@ export const DATA_REVELATION_RESOURCE: Resource = {
 export const AVAILABLE_TOOLS_RESOURCE: Resource = {
   uri: "agent://available-tools",
   name: "Available Tools",
-  description: "Comprehensive list of tools available for agent communication, including service marketplace operations, payment processing, and content delivery management",
-  mimeType: "application/json"
+  description: "List of tools available for agent communication",
+  mimeType: "application/json",
+  content: JSON.stringify({
+    tool_categories: ["authentication", "marketplace", "content", "payment", "delivery", "feedback", "management"]
+  })
 };
 
 /**
@@ -100,7 +137,6 @@ export const RESOURCES = [
  * Handle list resources request
  */
 export function handleListResources(): Resource[] {
-  logger.info("Handling list resources request");
   return RESOURCES;
 }
 
@@ -110,14 +146,13 @@ export function handleListResources(): Resource[] {
  * @returns The resource metadata and content
  */
 export function handleReadResource(resourceUri: string): Resource {
-  logger.info(`Handling read resource request for ${resourceUri}`);
-  
   const resource = RESOURCES.find((r) => r.uri === resourceUri);
   
   if (!resource) {
-    throw new McpError(
-      ErrorCode.InvalidRequest,
-      `Resource not found: ${resourceUri}`
+    throw new AppError(
+      `Resource not found: ${resourceUri}`,
+      'RESOURCE_NOT_FOUND',
+      404
     );
   }
 

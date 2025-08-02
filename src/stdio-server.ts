@@ -5,27 +5,24 @@ dotenv.config();
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
-  McpError,
-  ErrorCode,
   CallToolRequestSchema,
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './logger.js';
 import { ToolHandler } from './tools.js';
 import { StateManager } from './state/manager.js';
 import { handleListResources, handleReadResource } from './resources.js';
-
-/**
- * Format error for logging
- */
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return `${error.name}: ${error.message}`;
-  }
-  return String(error);
-}
+import { AuthService } from './supabase/auth.js';
+import { AppError } from './errors/AppError.js';
+import { handleError, formatErrorForResponse } from './errors/errorHandler.js';
+import { listPrompts, getPrompt } from './prompt.js';
+import { formatError } from './utils/error-formatter.js';
+import { isAuthRequired } from './utils/auth-guard.js';
+import { getDefaultServerConfig } from './utils/server-config.js';
 
 /**
  * Create and configure MCP server
@@ -34,7 +31,7 @@ export async function createServer() {
   logger.info('Creating Agent Communication MCP server');
 
   // Initialize state manager (which handles all service initialization)
-  const stateManager = StateManager.getInstance();
+  const stateManager = await StateManager.getInstance();
   await stateManager.initialize();
 
   const toolHandler = new ToolHandler(
@@ -42,6 +39,9 @@ export async function createServer() {
     stateManager.getEncryptionService(),
     stateManager.getAuthService()
   );
+
+  // Initialize the tool handler
+  await toolHandler.initialize();
 
   // Create server instance
   const server = new Server(
@@ -53,6 +53,7 @@ export async function createServer() {
       capabilities: {
         resources: {},
         tools: {},
+        prompts: {},
       },
     },
   );
@@ -86,30 +87,6 @@ export async function createServer() {
 }
 
 /**
- * Helper function to handle errors uniformly
- */
-function handleError(context: string, error: unknown): never {
-  logger.error({
-    msg: `Error ${context}`,
-    error: error instanceof Error ? error.message : 'Unknown error',
-    details: error instanceof Error ? error.stack : String(error),
-    context: {
-      operation: context,
-      timestamp: new Date().toISOString()
-    }
-  });
-
-  if (error instanceof McpError) {
-    throw error;
-  }
-
-  throw new McpError(
-    ErrorCode.InternalError,
-    `${context}: ${formatError(error)}`,
-  );
-}
-
-/**
  * Set up server request handlers
  */
 function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
@@ -120,9 +97,28 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
       const toolArgs = request.params.arguments;
 
       logger.info(`Tool call received: ${toolName}`);
+      
+      // Check if tool requires authentication
+      if (isAuthRequired(toolName)) {
+        const authService = AuthService.getInstance();
+        if (!authService.isAuthenticated()) {
+          throw new AppError(
+            'Authentication required. Please use the login tool to authenticate first.',
+            'AUTH_REQUIRED',
+            401
+          );
+        }
+      }
+
       return await toolHandler.handleToolCall(toolName, toolArgs);
     } catch (error) {
-      return handleError('handling tool call', error);
+      const formattedError = formatErrorForResponse(error);
+      throw new AppError(
+        formattedError.message,
+        'TOOL_CALL_ERROR',
+        formattedError.statusCode,
+        error
+      );
     }
   });
 
@@ -131,7 +127,7 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
     try {
       return { resources: handleListResources() };
     } catch (error) {
-      return handleError('listing resources', error);
+      throw handleError('listing resources', error);
     }
   });
 
@@ -149,7 +145,7 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
         }]
       };
     } catch (error) {
-      handleError('reading resource', error);
+      throw handleError('reading resource', error);
     }
   });
 
@@ -160,6 +156,14 @@ function setupRequestHandlers(server: Server, toolHandler: ToolHandler) {
     } catch (error) {
       return handleError('listing tools', error);
     }
+  });
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    return listPrompts();
+  });
+  
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    return getPrompt(request);
   });
 
   // Handle global errors
@@ -204,16 +208,7 @@ async function main() {
     // Handle process exit signals
     setupExitHandlers(server);
   } catch (error) {
-    logger.error({
-      msg: 'Failed to start server',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      details: error instanceof Error ? error.stack : String(error),
-      context: {
-        operation: 'server_startup',
-        timestamp: new Date().toISOString()
-      }
-    });
-    process.exit(1);
+    throw handleError('starting server', error);
   }
 }
 

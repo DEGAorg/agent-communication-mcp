@@ -4,19 +4,25 @@ import { randomBytes } from '@noble/hashes/utils';
 import { createCipheriv, createDecipheriv } from 'crypto';
 import { supabase } from '../supabase/config.js';
 import { MessagePublic } from '../supabase/message-types.js';
+import { KeyManager } from '../utils/key-manager.js';
+import { AppError } from '../errors/AppError.js';
 
 export class EncryptionService {
   private readonly publicKey: Uint8Array;
   private readonly privateKey: Uint8Array;
 
-  constructor() {
-    // Load keys from environment variables
-    const publicKeyBase64 = process.env.AGENT_PUBLIC_KEY;
-    const privateKeyBase64 = process.env.AGENT_PRIVATE_KEY;
-
-    if (!publicKeyBase64 || !privateKeyBase64) {
-      throw new Error('Agent keys not found in environment variables. Please run "yarn cli generate-keys <agent-id>" first.');
+  constructor(agentId: string) {
+    // Load keys from files using KeyManager
+    if (!KeyManager.hasAgentKeys(agentId)) {
+      throw new AppError(
+        `Agent keys not found. Please run "yarn cli generate-keys <agent-id>" first.`,
+        'KEYS_NOT_FOUND',
+        400
+      );
     }
+
+    const publicKeyBase64 = KeyManager.getAgentPublicKey(agentId);
+    const privateKeyBase64 = KeyManager.getAgentPrivateKey(agentId);
 
     this.publicKey = Buffer.from(publicKeyBase64, 'base64');
     this.privateKey = Buffer.from(privateKeyBase64, 'base64');
@@ -25,6 +31,11 @@ export class EncryptionService {
   // Get the agent's public key
   getPublicKey(): Uint8Array {
     return this.publicKey;
+  }
+
+  // Get the agent's private key
+  getPrivateKey(): Uint8Array {
+    return this.privateKey;
   }
 
   // Generate a random AES-256 key
@@ -52,7 +63,6 @@ export class EncryptionService {
   // Decrypt data with AES-256-GCM
   private decryptAES(encrypted: { nonce: string; ciphertext: string; tag: string }, key: Uint8Array): string {
     try {
-      
       const nonce = Buffer.from(encrypted.nonce, 'base64');
       const ciphertext = Buffer.from(encrypted.ciphertext, 'base64');
       const tag = Buffer.from(encrypted.tag, 'base64');
@@ -65,8 +75,12 @@ export class EncryptionService {
         decipher.final()
       ]).toString('utf8');
     } catch (error) {
-      logger.error('Error decrypting message:', error);
-      throw error;
+      throw new AppError(
+        'Failed to decrypt message',
+        'DECRYPTION_ERROR',
+        500,
+        error
+      );
     }
   }
 
@@ -74,8 +88,6 @@ export class EncryptionService {
   private encryptKey(key: Uint8Array, recipientPublicKey: Uint8Array, senderPrivateKey: Uint8Array): string {
     try {
       const sharedSecret = x25519.getSharedSecret(senderPrivateKey, recipientPublicKey);
-      logger.debug('Encrypting key with shared secret length:', sharedSecret.length);
-      
       const nonce = Buffer.alloc(12, 0);
       const cipher = createCipheriv('aes-256-gcm', sharedSecret.slice(0, 32), nonce);
       
@@ -84,16 +96,17 @@ export class EncryptionService {
         cipher.final()
       ]);
       
-      const result = Buffer.concat([
+      return Buffer.concat([
         encrypted,
         cipher.getAuthTag()
       ]).toString('base64');
-      
-      logger.debug('Encrypted key length:', result.length);
-      return result;
     } catch (error) {
-      logger.error('Error encrypting key:', error);
-      throw error;
+      throw new AppError(
+        'Failed to encrypt key',
+        'ENCRYPTION_ERROR',
+        500,
+        error
+      );
     }
   }
 
@@ -101,28 +114,25 @@ export class EncryptionService {
   private decryptKey(encryptedKey: string, senderPublicKey: Uint8Array, recipientPrivateKey: Uint8Array): Uint8Array {
     try {
       const encrypted = Buffer.from(encryptedKey, 'base64');
-      logger.debug('Decrypting key with length:', encrypted.length);
-      
       const tag = encrypted.slice(-16);
       const ciphertext = encrypted.slice(0, -16);
       
       const sharedSecret = x25519.getSharedSecret(recipientPrivateKey, senderPublicKey);
-      logger.debug('Decrypting with shared secret length:', sharedSecret.length);
-      
       const nonce = Buffer.alloc(12, 0);
       const decipher = createDecipheriv('aes-256-gcm', sharedSecret.slice(0, 32), nonce);
       decipher.setAuthTag(tag);
 
-      const decrypted = Buffer.concat([
+      return Buffer.concat([
         decipher.update(ciphertext),
         decipher.final()
       ]);
-      
-      logger.debug('Decrypted key length:', decrypted.length);
-      return decrypted;
     } catch (error) {
-      logger.error('Error decrypting key:', error);
-      throw error;
+      throw new AppError(
+        'Failed to decrypt key',
+        'DECRYPTION_ERROR',
+        500,
+        error
+      );
     }
   }
 
@@ -166,7 +176,11 @@ export class EncryptionService {
       .single();
 
     if (!auditor) {
-      throw new Error('Auditor public key not found in database');
+      throw new AppError(
+        'Auditor public key not found in database',
+        'AUDITOR_KEY_NOT_FOUND',
+        404
+      );
     }
 
     return Buffer.from(auditor.public_key, 'base64');
@@ -186,8 +200,12 @@ export class EncryptionService {
       // Then decrypt the message
       return this.decryptAES(encryptedMessage, aesKey);
     } catch (error) {
-      logger.error('Error decrypting message:', error);
-      throw error;
+      throw new AppError(
+        'Failed to decrypt message',
+        'DECRYPTION_ERROR',
+        500,
+        error
+      );
     }
   }
 
@@ -217,10 +235,18 @@ export class EncryptionService {
       }
 
       // If it's not a valid MessagePublic, throw an error
-      throw new Error('Decrypted content does not match MessagePublic structure');
+      throw new AppError(
+        'Decrypted content does not match MessagePublic structure',
+        'INVALID_MESSAGE_FORMAT',
+        400
+      );
     } catch (error) {
-      logger.error('Error decrypting and checking message type:', error);
-      throw error;
+      throw new AppError(
+        'Failed to decrypt and validate message',
+        'DECRYPTION_ERROR',
+        500,
+        error
+      );
     }
   }
 } 

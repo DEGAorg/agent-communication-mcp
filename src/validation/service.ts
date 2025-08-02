@@ -43,6 +43,14 @@ const VALIDATION_RULES = {
   },
   privacy: {
     allowedValues: Object.values(SERVICE_PRIVACY_LEVELS)
+  },
+  midnight_wallet_address: {
+    minLength: 5,
+    maxLength: 150,  // Increased to accommodate the example address length
+    pattern: /^[a-zA-Z0-9\-_]+$/  // Allow alphanumeric, hyphens, and underscores
+  },
+  status: {
+    allowedValues: ['active', 'inactive']
   }
 } as const;
 
@@ -161,6 +169,34 @@ export function validateServicePrivacy(privacy: string): void {
   }
 }
 
+export function validateMidnightWalletAddress(address: string): void {
+  if (!address) {
+    throw new ServiceValidationError('Midnight wallet address is required');
+  }
+  
+  if (address.length < VALIDATION_RULES.midnight_wallet_address.minLength) {
+    throw new ServiceValidationError('Midnight wallet address is too short');
+  }
+  
+  if (address.length > VALIDATION_RULES.midnight_wallet_address.maxLength) {
+    throw new ServiceValidationError('Midnight wallet address is too long');
+  }
+  
+  if (!VALIDATION_RULES.midnight_wallet_address.pattern.test(address)) {
+    throw new ServiceValidationError('Midnight wallet address can only contain letters, numbers, hyphens, and underscores');
+  }
+}
+
+export function validateServiceStatus(status: string): void {
+  if (!status) {
+    throw new ServiceValidationError('Service status is required');
+  }
+  
+  if (!VALIDATION_RULES.status.allowedValues.includes(status as 'active' | 'inactive')) {
+    throw new ServiceValidationError(`Invalid status. Must be one of: ${VALIDATION_RULES.status.allowedValues.join(', ')}`);
+  }
+}
+
 export function validateService(service: {
   name: string;
   type: string;
@@ -169,17 +205,92 @@ export function validateService(service: {
   description: string;
   privacy_settings: {
     privacy: string;
-    conditions: {
+    conditions?: {
       text: string;
       privacy: string;
     };
   };
+  midnight_wallet_address: string;
+  status?: 'active' | 'inactive';
 }): void {
   validateServiceName(service.name);
   validateServiceType(service.type);
   validateServiceDescription(service.description);
   validateServiceExample(service.example);
   validateServicePrice(service.price);
-  validateServicePrivacy(service.privacy_settings.privacy);
-  validateServicePrivacy(service.privacy_settings.conditions.privacy);
+  if (service.privacy_settings?.privacy) {
+    validateServicePrivacy(service.privacy_settings.privacy);
+  }
+  validateMidnightWalletAddress(service.midnight_wallet_address);
+  
+  // If status is provided, validate it
+  if (service.status) {
+    validateServiceStatus(service.status);
+  } else {
+    // Force status to be 'inactive' for new services
+    service.status = 'inactive';
+  }
+}
+
+export interface ServiceFilters {
+  topics?: string[];
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  serviceType?: string | null;
+  includeInactive?: boolean;
+}
+
+export function validateServiceFilters(filters: ServiceFilters): void {
+  const { minPrice, maxPrice, serviceType } = filters;
+
+  // Validate minPrice if provided and not null/undefined
+  if (minPrice !== null && minPrice !== undefined) {
+    if (typeof minPrice !== 'number' || isNaN(minPrice)) {
+      throw new ServiceValidationError('minPrice must be a valid number when provided');
+    }
+    if (minPrice < VALIDATION_RULES.price.min) {
+      throw new ServiceValidationError(`minPrice must be at least ${VALIDATION_RULES.price.min}`);
+    }
+    if (minPrice > VALIDATION_RULES.price.max) {
+      throw new ServiceValidationError(`minPrice must not exceed ${VALIDATION_RULES.price.max}`);
+    }
+  }
+
+  // Validate maxPrice if provided and not null/undefined
+  if (maxPrice !== null && maxPrice !== undefined) {
+    if (typeof maxPrice !== 'number' || isNaN(maxPrice)) {
+      throw new ServiceValidationError('maxPrice must be a valid number when provided');
+    }
+    if (maxPrice < VALIDATION_RULES.price.min) {
+      throw new ServiceValidationError(`maxPrice must be at least ${VALIDATION_RULES.price.min}`);
+    }
+    if (maxPrice > VALIDATION_RULES.price.max) {
+      throw new ServiceValidationError(`maxPrice must not exceed ${VALIDATION_RULES.price.max}`);
+    }
+  }
+
+  // Validate price range if both are provided and not null/undefined
+  if (minPrice !== null && maxPrice !== null && 
+      minPrice !== undefined && maxPrice !== undefined && 
+      typeof minPrice === 'number' && typeof maxPrice === 'number') {
+    if (minPrice > maxPrice) {
+      throw new ServiceValidationError('minPrice cannot be greater than maxPrice');
+    }
+  }
+
+  // Validate serviceType if provided and not null/undefined
+  if (serviceType !== null && serviceType !== undefined) {
+    if (typeof serviceType !== 'string') {
+      throw new ServiceValidationError('serviceType must be a string when provided');
+    }
+    if (serviceType.length < VALIDATION_RULES.type.minLength) {
+      throw new ServiceValidationError(`serviceType must be at least ${VALIDATION_RULES.type.minLength} characters long`);
+    }
+    if (serviceType.length > VALIDATION_RULES.type.maxLength) {
+      throw new ServiceValidationError(`serviceType must not exceed ${VALIDATION_RULES.type.maxLength} characters`);
+    }
+    if (!VALIDATION_RULES.type.pattern.test(serviceType)) {
+      throw new ServiceValidationError('serviceType can only contain letters, numbers, and underscores');
+    }
+  }
 } 

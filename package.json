@@ -19,17 +19,20 @@
     "auth:retry": "tsx src/cli/auth.ts retry",
     "service:register": "tsx src/cli/service.ts",
     "service:register:test": "tsx src/cli/service.ts --test",
-    "keys:generate": "tsx src/cli/keys.ts generate"
+    "keys:generate": "tsx src/cli/keys.ts generate",
+    "setup:agent": "tsx scripts/setup-agent.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.10.2",
+    "@modelcontextprotocol/sdk": "^1.15.1",
     "@noble/ciphers": "^1.3.0",
     "@noble/curves": "^1.9.0",
+    "@noble/hashes": "^1.8.0",
     "@supabase/supabase-js": "^2.39.0",
     "@types/inquirer": "^9.0.8",
     "chalk": "^5.3.0",
     "circomlib": "^2.0.5",
     "circomlibjs": "^0.1.7",
+    "commander": "^14.0.0",
     "dotenv": "^16.5.0",
     "fp-ts": "^2.16.1",
     "inquirer": "^12.6.1",

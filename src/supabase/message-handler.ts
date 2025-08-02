@@ -10,6 +10,8 @@ import { ReceivedContentStorage } from '../storage/received-content.js';
 import { groth16 } from 'snarkjs';
 import { buildPoseidon } from 'circomlibjs';
 import fs from 'fs';
+import { AppError } from '../errors/AppError.js';
+import { verifyTransaction, sendFunds } from '../api/wallet-api.js';
 
 export class MessageHandler {
   private static instance: MessageHandler;
@@ -65,8 +67,6 @@ export class MessageHandler {
       let decryptedPublicContent: MessagePublic | undefined;
 
       if (hasPrivateContent(message) && hasEncryptedContent(message)) {
-        const recipientPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-        
         // Get sender's public key from database
         const senderPublicKeyBase64 = await this.supabaseService!.getAgentPublicKey(message.sender_agent_id);
         if (!senderPublicKeyBase64) {
@@ -78,7 +78,7 @@ export class MessageHandler {
           message.private.encryptedMessage!,
           message.private.encryptedKeys!.recipient,
           senderPublicKey,
-          recipientPrivateKey
+          this.encryptionService!.getPrivateKey()
         );
 
         decryptedPublicContent = publicMessage;
@@ -111,7 +111,15 @@ export class MessageHandler {
           logger.warn(`Unhandled message topic: ${topic}`);
       }
     } catch (error) {
-      logger.error('Error handling message:', error);
+      logger.error({
+        msg: `Error handling message ${message.id}`,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error),
+        context: {
+          messageId: message.id,
+          timestamp: new Date().toISOString()
+        }
+      });
       throw error;
     }
   }
@@ -153,9 +161,9 @@ export class MessageHandler {
     await this.receivedContentStorage!.storeContent({
       payment_message_id: message.parent_message_id!,
       service_id: serviceId,
+      agent_id: message.recipient_agent_id,
       content: contentData,
-      version,
-      tags: ['received']
+      version
     });
 
     // Mark message as read after successful processing
@@ -185,35 +193,90 @@ export class MessageHandler {
       }
     }
 
-    // Get the stored service content
-    const serviceContentStorage = ServiceContentStorage.getInstance();
-    const serviceContent = await serviceContentStorage.getContent(serviceId);
-    
-    if (!serviceContent) {
-      throw new Error(`No content found for service ${serviceId}`);
+    // Read payment details from the message
+    const data = message.public?.content?.data || decryptedContent?.content?.data;
+    if (!data?.amount || !data?.transaction_id) {
+      throw new Error('No amount or transaction ID found in payment message');
     }
 
-    // Create and send the delivery message
-    const deliveryMessage = await createServiceDeliveryMessage(
-      service.agent_id, // sender is the service provider
-      message.sender_agent_id, // recipient is the payment sender
-      serviceId,
-      serviceContent.content,
-      serviceContent.version,
-      service.name,
-      service.privacy_settings,
-      message.id, // Set parent_message_id to the payment message
-      message.conversation_id // Use the same conversation_id as the payment message
-    );
+    // Start transaction verification process in background
+    this.verifyTransactionWithRetry(message, data.transaction_id, data.amount, service)
+      .catch(error => {
+        logger.error('Error in background transaction verification', {
+          error,
+          transactionId: data.transaction_id,
+          messageId: message.id
+        });
+      });
 
-    await this.supabaseService!.sendMessage(deliveryMessage);
-    
-    // Mark payment message as read after successful processing and delivery message sent
-    await this.supabaseService!.markMessageAsRead(message.id!);
-
-    logger.info(`Service delivery triggered automatically after payment for service ${serviceId}`, {
-      conversation_id: message.conversation_id,
-      parent_message_id: message.id
-    });
+    logger.info(`Payment message received and verification started for transaction ${data.transaction_id}`);
   }
-} 
+
+  private async verifyTransactionWithRetry(
+    message: Message & { private: EncryptedMessage },
+    transactionIdentifier: string,
+    amount: string,
+    service: any
+  ): Promise<void> {
+    const MAX_RETRY_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+    const RETRY_INTERVAL = 10 * 1000; // 10 seconds in milliseconds
+    const startTime = Date.now();
+    let isTxValid = false;
+
+    while (Date.now() - startTime < MAX_RETRY_TIME) {
+      isTxValid = await verifyTransaction(transactionIdentifier, amount);
+      if (isTxValid) {
+        break;
+      }
+      
+      logger.info(`Transaction ${transactionIdentifier} not yet valid, retrying in ${RETRY_INTERVAL/1000} seconds...`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL));
+    }
+
+    if (!isTxValid) {
+      logger.error(`Transaction ${transactionIdentifier} not valid after ${MAX_RETRY_TIME/1000/60} minutes of retrying`);
+      return;
+    }
+
+    try {
+      // Get the stored service content
+      const serviceContentStorage = ServiceContentStorage.getInstance();
+      const serviceContent = await serviceContentStorage.getContent(service.agent_id, service.id);
+      
+      if (!serviceContent) {
+        throw new Error(`No content found for service ${service.id}`);
+      }
+
+      // Create and send the delivery message
+      const deliveryMessage = await createServiceDeliveryMessage(
+        service.agent_id,
+        message.sender_agent_id,
+        service.id,
+        serviceContent.content,
+        serviceContent.version,
+        service.name,
+        service.privacy_settings,
+        message.id,
+        message.conversation_id
+      );
+
+      await this.supabaseService!.sendMessage(deliveryMessage);
+      
+      // Only mark as read after successful delivery
+      await this.supabaseService!.markMessageAsRead(message.id!);
+      
+      logger.info(`Service delivery triggered after successful payment verification for service ${service.id}`, {
+        conversation_id: message.conversation_id,
+        parent_message_id: message.id
+      });
+    } catch (error) {
+      logger.error('Error processing delivery after transaction verification', {
+        error,
+        transactionId: transactionIdentifier,
+        messageId: message.id
+      });
+      // Don't mark as read if there was an error
+      throw error;
+    }
+  }
+}

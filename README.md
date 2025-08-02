@@ -13,7 +13,7 @@ A Model Context Protocol (MCP) server implementation that enables secure, agent-
 
 ## Prerequisites
 
-- Node.js 22 LTS or later
+- Node.js 22.15.0 LTS or later
 - Yarn 4.1.0
 - Supabase account and project
 
@@ -25,17 +25,40 @@ yarn install
 ```
 
 2. Create a `.env` file in the project root with your Supabase credentials:
+```bash
+cp doc/env.example .env
+```
+
+Then edit the `.env` file with your credentials:
 ```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
 MCP_AUTH_EMAIL=your.email@example.com
-MCP_AUTH_POLL_INTERVAL=2000
-MCP_AUTH_MAX_POLL_ATTEMPTS=30
 ```
 
 ## Key Management
 
 The system uses X25519 key pairs for secure communication. Each agent needs its own key pair.
+
+### Setup Agent
+
+Set up a new agent with encryption keys:
+```bash
+yarn setup:agent -a <agent-id> [-d <directory>]
+```
+
+This will:
+- Create the necessary directory structure
+- Generate a new X25519 key pair
+- Save the keys in the encryption directory
+- Set appropriate file permissions
+
+Example:
+```bash
+yarn setup:agent -a midnight-agent -d /home/cerrato/mnai/midnight-agent
+```
+
+The keys will be saved as:
+- `<directory>/.storage/encryption/<agent-id>/public.key`
+- `<directory>/.storage/encryption/<agent-id>/private.key`
 
 ### Generate Key Pair
 

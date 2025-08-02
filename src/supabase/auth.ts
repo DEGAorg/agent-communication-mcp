@@ -1,27 +1,23 @@
 import { supabase } from './config.js';
 import { logger } from '../logger.js';
-import * as fs from 'fs';
-import * as path from 'path';
 import { SupabaseService } from './service.js';
+import { FileManager, FileType } from '../utils/file-manager.js';
+import { KeyManager } from '../utils/key-manager.js';
 
 export class AuthService {
   private static instance: AuthService;
   private currentSession: any = null;
-  private readonly SESSION_FILE: string;
   private isInitializing: boolean = false;
   private renewalInterval: NodeJS.Timeout | null = null;
   private supabaseService: SupabaseService | null = null;
+  private fileManager: FileManager;
 
   private constructor() {
-    // Set up session file path in project root
-    const projectRoot = process.cwd();
-    const sessionDir = path.join(projectRoot, 'session');
-    this.SESSION_FILE = path.join(sessionDir, 'auth.json');
-    
-    // Ensure session directory exists
-    if (!fs.existsSync(sessionDir)) {
-      fs.mkdirSync(sessionDir, { mode: 0o700 }); // Secure directory permissions
-    }
+    // Initialize FileManager with secure permissions
+    this.fileManager = FileManager.getInstance({
+      dirMode: 0o700,  // More restrictive for auth directories
+      fileMode: 0o600  // More restrictive for auth files
+    });
   }
 
   static getInstance(): AuthService {
@@ -40,8 +36,8 @@ export class AuthService {
    * This should be called before any other operations
    */
   async initialize(): Promise<void> {
-    // Initialize session
-    await this.initializeFromEnv();
+    // Try to load existing session
+    await this.loadSession();
     
     // Start periodic session renewal check
     this.startSessionRenewalCheck();
@@ -77,50 +73,23 @@ export class AuthService {
     }
   }
 
-  private async initializeFromEnv() {
-    const email = process.env.MCP_AUTH_EMAIL;
-    if (!email) {
-      throw new Error('MCP_AUTH_EMAIL environment variable is required');
-    }
-
-    // Try to load existing session
-    const hasValidSession = await this.loadSession();
-    if (hasValidSession) {
-      logger.info('Found and loaded existing valid session');
-      return;
-    }
-
-    logger.info('No valid session found. Starting new authentication flow...');
-    // If no valid session and not already initializing, start OTP flow
-    if (!this.isInitializing) {
-      try {
-        this.isInitializing = true;
-        await this.signInWithOtp(email);
-        // Note: We don't set isInitializing to false here because we need to wait for OTP verification
-        // The flag will be cleared in verifyOtp after successful authentication
-      } catch (error) {
-        this.isInitializing = false;
-        throw error;
-      }
-    }
-  }
-
   /**
    * Loads the session from persistent storage
    * @returns true if a valid session was loaded, false otherwise
    */
   private async loadSession(): Promise<boolean> {
     try {
-      if (!fs.existsSync(this.SESSION_FILE)) {
-        logger.info('No session file found');
+      const agentId = process.env.AGENT_ID || 'default';
+      if (!this.fileManager.fileExists(FileType.AUTH, agentId, 'session.json')) {
+        logger.info('No session file found - authentication required');
         return false;
       }
 
-      const sessionData = JSON.parse(fs.readFileSync(this.SESSION_FILE, 'utf8'));
+      const sessionData = JSON.parse(this.fileManager.readFile(FileType.AUTH, agentId, 'session.json'));
       
       // Validate session data
       if (!sessionData?.access_token || !sessionData?.refresh_token) {
-        logger.info('Session file exists but contains invalid data');
+        logger.info('Session file exists but contains invalid data - authentication required');
         return false;
       }
 
@@ -131,14 +100,56 @@ export class AuthService {
       });
 
       if (error || !session) {
-        logger.info('Failed to restore session from file');
+        logger.info('Failed to restore session from file - authentication required');
         return false;
       }
 
       this.currentSession = session;
+      logger.info('Successfully loaded existing session');
 
-      // Register agent if needed
-      await this.registerAgent();
+      // Try to register agent if needed, but don't fail if registration fails
+      try {
+        await this.registerAgent();
+      } catch (error) {
+        // Log the error but don't fail the session load
+        logger.warn({
+          msg: 'Agent registration failed during session load',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          details: error instanceof Error ? error.stack : String(error),
+          context: {
+            userId: this.currentSession?.user?.id,
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+      // Reactivate services after loading session
+      if (this.supabaseService) {
+        const agentId = this.getCurrentUserId();
+        if (agentId) {
+          const { error: updateError } = await supabase
+            .from('services')
+            .update({ 
+              status: 'active',
+              connection_status: 'connected'
+            })
+            .eq('agent_id', agentId)
+            .eq('connection_status', 'disconnected');
+
+          if (updateError) {
+            logger.error({
+              msg: 'Error reactivating services',
+              error: updateError.message,
+              details: updateError.details,
+              context: {
+                operation: 'service_reactivation',
+                agentId,
+                timestamp: new Date().toISOString()
+              }
+            });
+          }
+        }
+      }
 
       return true;
     } catch (error) {
@@ -156,16 +167,19 @@ export class AuthService {
         return;
       }
 
+      const agentId = process.env.AGENT_ID || 'default';
       const sessionData = {
         access_token: this.currentSession.access_token,
         refresh_token: this.currentSession.refresh_token,
         expires_at: this.currentSession.expires_at
       };
 
-      // Write session data with secure permissions
-      fs.writeFileSync(this.SESSION_FILE, JSON.stringify(sessionData), {
-        mode: 0o600 // Secure file permissions
-      });
+      this.fileManager.writeFile(
+        FileType.AUTH,
+        agentId,
+        JSON.stringify(sessionData),
+        'session.json'
+      );
     } catch (error) {
       logger.error('Failed to save session:', error);
     }
@@ -313,16 +327,12 @@ export class AuthService {
           details: 'The SupabaseService instance was not properly set before attempting to register the agent',
           context: {
             userId: this.currentSession?.user?.id,
-            agentName: process.env.AGENT_NAME || 'default_agent',
-            hasPublicKey: !!process.env.AGENT_PUBLIC_KEY,
             timestamp: new Date().toISOString()
           }
         });
         throw error;
       }
 
-      const agentName = process.env.AGENT_NAME || 'default_agent';
-      const publicKey = process.env.AGENT_PUBLIC_KEY;
       const userId = this.currentSession?.user?.id;
 
       if (!userId) {
@@ -332,44 +342,49 @@ export class AuthService {
           error: error.message,
           details: 'The current session does not contain a valid user ID',
           context: {
-            agentName,
-            hasPublicKey: !!publicKey,
+            userId: this.currentSession?.user?.id,
             timestamp: new Date().toISOString()
           }
         });
         throw error;
       }
 
-      if (!publicKey) {
-        const error = new Error('AGENT_PUBLIC_KEY environment variable is required for agent registration');
-        logger.error({
-          msg: 'Failed to register agent',
-          error: error.message,
-          details: 'The AGENT_PUBLIC_KEY environment variable is missing',
-          context: {
-            userId,
-            agentName,
-            timestamp: new Date().toISOString()
-          }
-        });
-        throw error;
-      }
-
-      // Check if agent is already registered
+      // Check if agent is already registered first
+      logger.info(`Checking if agent ${userId} is already registered...`);
       const existingAgent = await this.supabaseService.getAgent(userId);
       if (existingAgent) {
-        logger.info(`Agent already registered: ${agentName}`);
+        logger.info(`Agent already registered`);
         return;
       }
 
+      // Only check for keys if we need to register
+      logger.info(`Checking for agent keys for ${userId}...`);
+      if (!KeyManager.hasAgentKeys(userId)) {
+        const error = new Error('Agent keys not found');
+        logger.error({
+          msg: 'Failed to register agent',
+          error: error.message,
+          details: 'The agent keys are not initialized. Please run "yarn setup:agent -a <agent-id>" first.',
+          context: {
+            userId: this.currentSession?.user?.id,
+            timestamp: new Date().toISOString()
+          }
+        });
+        throw error;
+      }
+
+      const publicKey = KeyManager.getAgentPublicKey(userId);
+      logger.info(`Found public key for agent ${userId}`);
+
       // Register new agent with the user's ID
+      logger.info(`Registering new agent: ${userId}`);
       await this.supabaseService.registerAgent({
         id: userId,
-        name: agentName,
+        name: userId,
         public_key: publicKey
       });
 
-      logger.info(`Agent registered successfully: ${agentName}`);
+      logger.info(`Agent registered successfully: ${userId}`);
     } catch (error) {
       logger.error({
         msg: 'Failed to register agent',
@@ -377,8 +392,6 @@ export class AuthService {
         details: error instanceof Error ? error.stack : String(error),
         context: {
           userId: this.currentSession?.user?.id,
-          agentName: process.env.AGENT_NAME || 'default_agent',
-          hasPublicKey: !!process.env.AGENT_PUBLIC_KEY,
           timestamp: new Date().toISOString()
         }
       });

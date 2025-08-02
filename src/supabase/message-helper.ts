@@ -18,6 +18,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
+import { config } from '../config.js';
+import { AppError } from '../errors/AppError.js';
+import { AuthService } from './auth.js';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -150,7 +153,7 @@ export async function createMessage(
   parentMessageId?: string,
   conversationId?: string
 ): Promise<MessageCreate> {
-  const encryptionService = new EncryptionService();
+  const encryptionService = new EncryptionService(config.agentId);
   const supabaseService = SupabaseService.getInstance();
   
   // If there's no private content, return message without encryption
@@ -166,9 +169,6 @@ export async function createMessage(
     };
   }
 
-  // Get the sender's private key and recipient's public key
-  const senderPrivateKey = Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64');
-  
   // Get recipient's public key from database
   const recipientPublicKeyBase64 = await supabaseService.getAgentPublicKey(recipientId);
   if (!recipientPublicKeyBase64) {
@@ -176,11 +176,11 @@ export async function createMessage(
   }
   const recipientPublicKey = Buffer.from(recipientPublicKeyBase64, 'base64');
   
-  // Encrypt the private content
+  // Encrypt the private content using encryptionService's private key
   const { encryptedMessage, encryptedKeys } = await encryptionService.encryptMessageForRecipients(
     JSON.stringify(privateContent),
     recipientPublicKey,
-    senderPrivateKey
+    encryptionService.getPrivateKey()
   );
 
   // Generate a new conversation ID if none is provided
@@ -425,7 +425,7 @@ export async function createServiceDeliveryMessage(
           version,
           timestamp: new Date().toISOString(),
           content: serviceContent,
-          conditions: privacySettings.conditions.text
+          conditions: privacySettings.conditions?.text || ''
         },
         metadata: createMessageMetadata()
       }
@@ -448,7 +448,7 @@ export async function createServiceDeliveryMessage(
     version,
     timestamp: new Date().toISOString(),
     content: serviceContent,
-    conditions: privacySettings.conditions.text
+    conditions: privacySettings.conditions?.text || ''
   };
 
   const content = createMessageContent(
@@ -512,4 +512,4 @@ export async function createServiceFeedbackMessage(
     parentMessageId,
     conversationId
   );
-} 
+}
