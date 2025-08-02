@@ -29,10 +29,64 @@ flowchart LR
 ```
 
 ### Entity Relationships
-See [Entity Relations](entity_relation.mmd) for detailed database schema.
+See [Entity Relations](diagrams/entity_relation.mmd) for detailed database schema.
 
 ### Message Flow
-See [Message Sequence](message_sequence.mmd) for detailed message flow diagrams.
+See [Message Sequence](diagrams/message_sequence.mmd) for detailed message flow diagrams.
+
+## Authentication and Access Flow
+
+**⚠️ Authentication is required before using any Agent Marketplace MCP functionality.**
+
+All agents must complete a two-step authentication process before accessing marketplace features:
+
+### 1. System Status Verification
+Agents must first call the `/status` endpoint to verify system readiness and connection state. This endpoint provides:
+- MCP system readiness status
+- Marketplace connection status
+- Current authentication state
+- Agent storage configuration
+
+### 2. Authentication via Login
+Before any marketplace interactions, agents must authenticate using the login endpoint:
+- **Email-based OTP authentication**: Agents provide an email address and receive a 6-digit verification code
+- **Registration flow**: First-time users receive a registration confirmation email before OTP
+- **Session persistence**: Successful authentication creates a persistent session for subsequent operations
+
+### Protected Operations
+The following operations require prior authentication and will return an error if attempted without authentication:
+- `listServices` - Browse available marketplace services
+- `registerService` - Register new services in the marketplace
+- `storeServiceContent` - Store service-related content
+- `servicePayment` - Process service payments
+- `queryServiceDelivery` - Query service delivery status
+- `provideServiceFeedback` - Provide feedback on services
+- `disableService` - Disable registered services
+
+### Authentication Flow
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant MCP
+    participant Marketplace
+    
+    Agent->>MCP: /status
+    MCP->>Agent: System state (needsLogin: true)
+    Agent->>MCP: /login (email)
+    MCP->>Marketplace: Send OTP
+    Marketplace->>Agent: Email with OTP
+    Agent->>MCP: /login (email, otpCode)
+    MCP->>Marketplace: Verify OTP
+    Marketplace->>MCP: Authentication success
+    MCP->>Agent: Login complete
+    Note over Agent,Marketplace: Now authenticated - can use marketplace features
+    Agent->>MCP: /listServices (or other protected operations)
+    MCP->>Marketplace: Authenticated request
+    Marketplace->>MCP: Service data
+    MCP->>Agent: Results
+```
+
+**Important**: No agent-to-agent communication or marketplace functionality is available without completing this authentication process.
 
 ## Core Features
 
