@@ -10,7 +10,8 @@ describe('auth-guard', () => {
         'storeServiceContent',
         'servicePayment',
         'queryServiceDelivery',
-        'provideServiceFeedback'
+        'provideServiceFeedback',
+        'disableService'
       ];
 
       protectedTools.forEach(toolName => {
@@ -22,7 +23,6 @@ describe('auth-guard', () => {
       const nonProtectedTools = [
         'status',
         'login',
-        'disableService',
         'unknownTool',
         'testTool',
         'someOtherTool'
@@ -58,26 +58,27 @@ describe('auth-guard', () => {
         'storeServiceContent',
         'servicePayment',
         'queryServiceDelivery',
-        'provideServiceFeedback'
+        'provideServiceFeedback',
+        'disableService'
       ];
 
       const result = getAuthRequiredTools();
-      
+
       expect(result).toEqual(expectedTools);
-      expect(result).toHaveLength(6);
+      expect(result).toHaveLength(7);
     });
 
     it('should return a new array each time', () => {
       const result1 = getAuthRequiredTools();
       const result2 = getAuthRequiredTools();
-      
+
       expect(result1).toEqual(result2);
       expect(result1).not.toBe(result2); // Different array references
     });
 
     it('should maintain the correct order', () => {
       const result = getAuthRequiredTools();
-      
+
       expect(result[0]).toBe('listServices');
       expect(result[1]).toBe('registerService');
       expect(result[2]).toBe('storeServiceContent');
@@ -90,7 +91,7 @@ describe('auth-guard', () => {
   describe('consistency between functions', () => {
     it('should have consistent data between isAuthRequired and getAuthRequiredTools', () => {
       const authRequiredTools = getAuthRequiredTools();
-      
+
       // All tools returned by getAuthRequiredTools should require auth
       authRequiredTools.forEach(toolName => {
         expect(isAuthRequired(toolName)).toBe(true);
@@ -99,7 +100,7 @@ describe('auth-guard', () => {
 
     it('should not have any tools that require auth but are not in the list', () => {
       const authRequiredTools = getAuthRequiredTools();
-      
+
       // Test some random tool names to ensure they don't require auth
       const randomTools = [
         'status',
