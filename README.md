@@ -28,9 +28,9 @@ cp doc/env.example .env
 ```
 Edit `.env` with your Supabase credentials and agent configuration.
 
-3. Configure Encryption Keys
+3. Configure Encryption Keys at agent locaiton
 ```bash
-yarn keys:generate
+yarn setup:agent -a <agent-name> -d <eliza-agent-directory>
 ```
 
 ## Local Development
