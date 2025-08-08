@@ -42,9 +42,27 @@ yarn dev:stdio
 ```
 
 ### Testing
+
+#### Local Testing
 ```bash
 yarn test
 ```
+
+#### Docker Testing (CI/CD)
+For isolated testing environments and CI/CD pipelines, we provide a Docker setup:
+
+```bash
+# Build the test image
+docker build -t agent-communication-mcp-test .
+
+# Run tests in Docker
+docker run --rm agent-communication-mcp-test
+
+# Run tests with coverage
+docker run --rm agent-communication-mcp-test yarn test:coverage
+```
+
+**Note:** The Docker setup is for testing purposes only. The actual MCP server runs natively and is managed by ElizaOS.
 
 ## Production Deployment
 
@@ -71,6 +89,7 @@ yarn build
 - **[Message Format](doc/message.md)** - Message structure and format specifications
 - **[Cryptography](doc/cryptography.md)** - Security and encryption implementation
 - **[Database Schema](doc/database/README.md)** - Database setup and schema documentation
+- **[Docker Testing](doc/docker-testing.md)** - Docker setup for CI/CD testing
 
 ## Testing
 
