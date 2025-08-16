@@ -17,8 +17,8 @@ RUN corepack enable
 # Copy package files
 COPY package.json yarn.lock .yarnrc.yml ./
 
-# Copy yarn configuration
-COPY .yarn .yarn
+# # Copy yarn configuration
+# COPY .yarn .yarn
 
 # Install dependencies using the correct Yarn version
 RUN yarn install --frozen-lockfile
