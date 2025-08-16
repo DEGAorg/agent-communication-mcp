@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+.yarn/
+
+# Build outputs
+dist/
+build/
+*.js.map
+
+# Coverage reports
+coverage/
+
+# Test artifacts
+test-results/
+
+# Environment files
+.env*
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Generated files
+*.generated.*
+*.min.*
+
+# ZK proof files
+src/zk/proofs/
+src/zk/*.zkey
+src/zk/*.wasm
+src/zk/*.json
+
+# Docker
+Dockerfile
+.dockerignore
+
+# GitHub Actions
+.github/
+
+# Documentation
+doc/
+*.md
+
+# Package files
+package-lock.json
+yarn.lock
+
+# Test files (opcional, si quieres mantener el formato original)
+test/**/*.test.ts
+test/**/*.spec.ts
