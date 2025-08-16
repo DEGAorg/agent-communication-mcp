@@ -29,10 +29,16 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'yarn'
 
+    - name: Enable Corepack for Yarn 4
+      run: |
+        echo "Enabling Corepack for Yarn 4..."
+        corepack enable
+        corepack prepare yarn@4 --activate
+
     - name: Install dependencies
       run: |
-        echo "Installing dependencies with Yarn..."
-        yarn install --frozen-lockfile --prefer-offline
+        echo "Installing dependencies with Yarn 4..."
+        yarn install --immutable
 
     - name: Run TypeScript type checking
       run: |
@@ -81,10 +87,16 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'yarn'
 
+    - name: Enable Corepack for Yarn 4
+      run: |
+        echo "Enabling Corepack for Yarn 4..."
+        corepack enable
+        corepack prepare yarn@4 --activate
+
     - name: Install dependencies
       run: |
-        echo "Installing dependencies with Yarn..."
-        yarn install --frozen-lockfile --prefer-offline
+        echo "Installing dependencies with Yarn 4..."
+        yarn install --immutable
 
     - name: Build project
       run: |
@@ -157,10 +169,16 @@ jobs:
         node-version: '22.x'
         cache: 'yarn'
 
+    - name: Enable Corepack for Yarn 4
+      run: |
+        echo "Enabling Corepack for Yarn 4..."
+        corepack enable
+        corepack prepare yarn@4 --activate
+
     - name: Install dependencies
       run: |
-        echo "Installing dependencies with Yarn..."
-        yarn install --frozen-lockfile --prefer-offline
+        echo "Installing dependencies with Yarn 4..."
+        yarn install --immutable
 
     - name: Check for security vulnerabilities
       run: |
@@ -210,10 +228,16 @@ jobs:
         node-version: '22.x'
         cache: 'yarn'
 
+    - name: Enable Corepack for Yarn 4
+      run: |
+        echo "Enabling Corepack for Yarn 4..."
+        corepack enable
+        corepack prepare yarn@4 --activate
+
     - name: Install dependencies
       run: |
-        echo "Installing dependencies with Yarn..."
-        yarn install --frozen-lockfile --prefer-offline
+        echo "Installing dependencies with Yarn 4..."
+        yarn install --immutable
 
     - name: Validate ZK proofs structure
       run: |
@@ -265,10 +289,16 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'yarn'
 
+    - name: Enable Corepack for Yarn 4
+      run: |
+        echo "Enabling Corepack for Yarn 4..."
+        corepack enable
+        corepack prepare yarn@4 --activate
+
     - name: Install dependencies
       run: |
-        echo "Installing dependencies with Yarn..."
-        yarn install --frozen-lockfile --prefer-offline
+        echo "Installing dependencies with Yarn 4..."
+        yarn install --immutable
 
     - name: Build project
       run: |
