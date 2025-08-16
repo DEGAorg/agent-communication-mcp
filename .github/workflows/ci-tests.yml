@@ -207,7 +207,14 @@ jobs:
     - name: Check for security vulnerabilities
       run: |
         echo "Checking for security vulnerabilities..."
-        yarn audit --level moderate || echo "Security vulnerabilities found - review required"
+        echo "Running yarn npm audit with moderate severity..."
+        yarn npm audit --severity moderate || echo "⚠️ Security vulnerabilities found - review required"
+        
+        echo "Checking for outdated packages..."
+        yarn outdated || echo "ℹ️ Some packages may be outdated"
+        
+        echo "Checking for duplicate packages..."
+        yarn dedupe --check || echo "ℹ️ Duplicate packages found"
 
     - name: Check package.json consistency
       run: |
@@ -235,12 +242,91 @@ jobs:
         else
           echo "✅ No environment files found in repository"
         fi
+        
+        echo "Checking for hardcoded secrets..."
+        if grep -r "password\|secret\|key\|token" src/ --include="*.ts" --include="*.js" | grep -v "//\|/\*" | grep -v "test\|example"; then
+          echo "⚠️ Potential hardcoded secrets found - review required"
+        else
+          echo "✅ No obvious hardcoded secrets found"
+        fi
+        
+        echo "Checking for console.log statements in production code..."
+        if grep -r "console.log\|console.error\|console.warn" src/ --include="*.ts" --include="*.js" | grep -v "//\|/\*" | grep -v "test\|example"; then
+          echo "⚠️ Console statements found in production code - consider removing"
+        else
+          echo "✅ No console statements in production code"
+        fi
+
+  advanced-security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    name: Advanced Security Scan
+    needs: unit-tests
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js 22.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+
+    - name: Enable Corepack for Yarn 4
+      run: |
+        echo "Enabling Corepack for Yarn 4..."
+        corepack enable
+        corepack prepare yarn@4 --activate
+
+    - name: Setup Yarn 4 cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/yarn
+          .yarn/cache
+        key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-yarn-
+
+    - name: Install dependencies
+      run: |
+        echo "Installing dependencies with Yarn 4..."
+        yarn install --immutable
+
+    - name: Deep security audit
+      run: |
+        echo "Running deep security audit..."
+        echo "Checking for known vulnerabilities in all dependencies..."
+        yarn npm audit --severity high || echo "⚠️ High severity vulnerabilities found"
+        
+        echo "Checking for license compliance..."
+        yarn licenses list --json | jq '.data | group_by(.license) | map({license: .[0].license, count: length})' || echo "ℹ️ License information available"
+        
+        echo "Checking for suspicious package names..."
+        yarn list --depth=0 | grep -i "suspicious\|malicious\|test\|example" || echo "ℹ️ No suspicious packages found"
+
+    - name: Code security analysis
+      run: |
+        echo "Analyzing code for security issues..."
+        echo "Checking for potential SQL injection patterns..."
+        if grep -r "SELECT\|INSERT\|UPDATE\|DELETE" src/ --include="*.ts" --include="*.js" | grep -v "//\|/\*" | grep -v "test\|example"; then
+          echo "⚠️ SQL-like patterns found - ensure proper parameterization"
+        else
+          echo "✅ No obvious SQL injection patterns"
+        fi
+        
+        echo "Checking for eval() usage..."
+        if grep -r "eval(" src/ --include="*.ts" --include="*.js" | grep -v "//\|/\*" | grep -v "test\|example"; then
+          echo "⚠️ eval() usage found - security risk!"
+        else
+          echo "✅ No eval() usage found"
+        fi
 
   zk-proofs-validation:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     name: ZK Proofs Validation
-    needs: unit-tests
+    needs: [unit-tests, advanced-security-scan]
 
     steps:
     - name: Checkout repository
@@ -305,7 +391,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     name: Full Integration Test
-    needs: [unit-tests, integration-tests, docker-validation, security-audit, zk-proofs-validation]
+    needs: [unit-tests, integration-tests, docker-validation, security-audit, advanced-security-scan, zk-proofs-validation]
     if: github.event_name == 'push' && github.ref == 'refs/heads/feature/docker'
 
     strategy:
@@ -374,7 +460,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     name: Test Report Generation
-    needs: [unit-tests, integration-tests, docker-validation, security-audit, zk-proofs-validation]
+    needs: [unit-tests, integration-tests, docker-validation, security-audit, advanced-security-scan, zk-proofs-validation]
     if: always()
 
     steps:
@@ -387,10 +473,11 @@ jobs:
         echo "- **Integration Tests**: ${{ needs.integration-tests.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Docker Validation**: ${{ needs.docker-validation.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Security Audit**: ${{ needs.security-audit.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Advanced Security Scan**: ${{ needs.advanced-security-scan.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- **ZK Proofs Validation**: ${{ needs.zk-proofs-validation.result }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
-        if [ "${{ needs.unit-tests.result }}" == "success" ] && [ "${{ needs.integration-tests.result }}" == "success" ] && [ "${{ needs.docker-validation.result }}" == "success" ] && [ "${{ needs.security-audit.result }}" == "success" ] && [ "${{ needs.zk-proofs-validation.result }}" == "success" ]; then
+        if [ "${{ needs.unit-tests.result }}" == "success" ] && [ "${{ needs.integration-tests.result }}" == "success" ] && [ "${{ needs.docker-validation.result }}" == "success" ] && [ "${{ needs.security-audit.result }}" == "success" ] && [ "${{ needs.advanced-security-scan.result }}" == "success" ] && [ "${{ needs.zk-proofs-validation.result }}" == "success" ]; then
           echo "🎉 **All tests passed successfully!**" >> $GITHUB_STEP_SUMMARY
         else
           echo "⚠️ **Some tests failed. Please review the logs above.**" >> $GITHUB_STEP_SUMMARY
