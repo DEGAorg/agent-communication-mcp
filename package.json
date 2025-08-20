@@ -13,7 +13,8 @@
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "keys:generate": "tsx src/cli/keys.ts generate",
-    "setup:agent": "tsx scripts/setup-agent.ts"
+    "setup:agent": "tsx scripts/setup-agent.ts",
+    "e2e:auth": "tsx scripts/e2e-auth.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.1",
@@ -51,7 +52,7 @@
     "prettier": "^3.0.3",
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.2",
-    "tsx": "^4.19.3",
+    "tsx": "^4.20.4",
     "typescript": "^5.2.2"
   }
 }
