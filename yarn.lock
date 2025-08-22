@@ -6958,7 +6958,7 @@ __metadata:
     snarkjs: "npm:^0.7.0"
     ts-jest: "npm:^29.1.1"
     ts-node: "npm:^10.9.2"
-    tsx: "npm:^4.19.3"
+    tsx: "npm:^4.20.4"
     typescript: "npm:^5.2.2"
     uuid: "npm:^11.1.0"
   languageName: unknown
@@ -7748,7 +7748,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tsx@npm:^4.19.3":
+"tsx@npm:^4.20.4":
   version: 4.20.4
   resolution: "tsx@npm:4.20.4"
   dependencies:

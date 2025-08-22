@@ -2,6 +2,8 @@
 
 This directory contains the comprehensive unit test suite for the Agent Communication MCP project. The tests are written using Jest and cover all major components of the system.
 
+> **Note**: For end-to-end testing that requires authentication, see the [Testing Documentation](../doc/testing/README.md) and [E2E Authentication Script](../doc/testing/e2e-authentication.md).
+
 ## Test Structure
 
 ### Setup and Configuration
@@ -97,6 +99,8 @@ Tests error formatting utilities:
 - Stack trace processing
 - Error categorization
 - User-friendly error messages
+
+
 
 #### **`utils/server-config.test.ts`** (5.2KB, 179 lines)
 Tests server configuration management:
