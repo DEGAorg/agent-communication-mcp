@@ -6,7 +6,7 @@
     "esModuleInterop": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "strict": true,
     "declaration": true,
     "skipLibCheck": true,
@@ -21,12 +21,12 @@
   },
   "include": [
     "src/**/*",
-    "test/**/*",
-    "scripts/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
+    "test/**/*",
+    "scripts/**/*",
     "coverage",
     ".yarn",
     "*.js",
