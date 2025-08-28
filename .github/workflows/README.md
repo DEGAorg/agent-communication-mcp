@@ -1,91 +1,91 @@
 # GitHub Actions Workflows
 
-Este directorio contiene los workflows de GitHub Actions para el proyecto `agent-communication-mcp`.
+This directory contains the GitHub Actions workflows for the `agent-communication-mcp` project.
 
-## Workflows Disponibles
+## Available Workflows
 
 ### 1. CI Tests (`ci-tests.yml`)
 
-**Propósito**: Ejecuta pruebas de integración continua para todas las ramas principales.
+**Purpose**: Runs continuous integration tests for all main branches.
 
 **Triggers**:
-- Push a `feature/docker`, `main`, `develop`
-- Pull requests a `main`, `develop`, `feature/docker`
+- Push to `feature/docker`, `main`, `develop`
+- Pull requests to `main`, `develop`, `feature/docker`
 
 **Jobs**:
-- **Unit Tests**: Pruebas unitarias y verificación de tipos TypeScript
-- **Integration Tests**: Pruebas de integración y construcción del proyecto
-- **Docker Validation**: Validación de la imagen Docker
-- **Security Audit**: Auditoría de seguridad y verificación de calidad
-- **ZK Proofs Validation**: Validación de pruebas de conocimiento cero
-- **Full Integration Test**: Prueba completa de integración (solo para `feature/docker`)
-- **Test Report**: Generación de reportes y artefactos
+- **Unit Tests**: Unit tests and TypeScript type checking
+- **Integration Tests**: Integration tests and project building
+- **Docker Validation**: Docker image validation
+- **Security Audit**: Security audit and quality verification
+- **ZK Proofs Validation**: Zero-knowledge proofs validation
+- **Full Integration Test**: Complete integration test (only for `feature/docker`)
+- **Test Report**: Report generation and artifacts
 
-**Características**:
-- Soporte para Node.js 20.x y 22.x
-- Cache optimizado para Yarn
-- Cobertura de código con Codecov
-- Validación de Docker
-- Verificación de pruebas ZK
+**Features**:
+- Support for Node.js 20.x and 22.x
+- Optimized cache for Yarn
+- Code coverage with Codecov
+- Docker validation
+- ZK proofs verification
 
 ### 2. Docker Tests (`docker-tests.yml`)
 
-**Propósito**: Pruebas específicas de Docker para la rama `feature/docker`.
+**Purpose**: Docker-specific tests for the `feature/docker` branch.
 
 **Triggers**:
-- Push a `feature/docker`
-- Pull requests a `feature/docker`
+- Push to `feature/docker`
+- Pull requests to `feature/docker`
 
 **Jobs**:
-- **Docker Build & Test**: Construcción y pruebas básicas de Docker
-- **Docker Performance Test**: Pruebas de rendimiento y métricas
+- **Docker Build & Test**: Docker build and basic tests
+- **Docker Performance Test**: Performance tests and metrics
 
-**Características**:
-- Validación completa de la imagen Docker
-- Pruebas de ciclo de vida del contenedor
-- Métricas de rendimiento
-- Verificación de artefactos Docker
+**Features**:
+- Complete Docker image validation
+- Container lifecycle tests
+- Performance metrics
+- Docker artifacts verification
 
-## Configuración de Yarn
+## Yarn Configuration
 
-Este proyecto utiliza **Yarn** como package manager. Los workflows están optimizados para:
+This project uses **Yarn** as the package manager. The workflows are optimized for:
 
-- **Cache**: Uso del cache de Yarn para acelerar las instalaciones
-- **Instalación**: `yarn install --frozen-lockfile --prefer-offline`
-- **Scripts**: Todos los comandos usan `yarn` en lugar de `npm`
+- **Cache**: Use of Yarn cache to speed up installations
+- **Installation**: `yarn install --frozen-lockfile --prefer-offline`
+- **Scripts**: All commands use `yarn` instead of `npm`
 
-## Scripts Disponibles
+## Available Scripts
 
-Los workflows utilizan los siguientes scripts del `package.json`:
+The workflows use the following scripts from `package.json`:
 
-- `yarn build`: Construcción del proyecto
-- `yarn test`: Ejecución de pruebas unitarias
-- `yarn test:coverage`: Pruebas con cobertura
-- `yarn test:file`: Pruebas de archivos específicos
-- `yarn lint`: Verificación de linting
-- `yarn tsc`: Verificación de tipos TypeScript
-- `yarn keys:generate`: Generación de claves
-- `yarn setup:agent`: Configuración de agente
+- `yarn build`: Project building
+- `yarn test`: Unit test execution
+- `yarn test:coverage`: Tests with coverage
+- `yarn test:file`: Tests for specific files
+- `yarn lint`: Linting verification
+- `yarn tsc`: TypeScript type checking
+- `yarn keys:generate`: Key generation
+- `yarn setup:agent`: Agent setup
 
-## Requisitos del Sistema
+## System Requirements
 
-- **Node.js**: Versiones 20.x y 22.x
-- **Yarn**: Versión 1.22.22 (especificada en package.json)
-- **Docker**: Para validación de contenedores
-- **Ubuntu**: Los workflows se ejecutan en `ubuntu-latest`
+- **Node.js**: Versions 20.x and 22.x
+- **Yarn**: Version 1.22.22 (specified in package.json)
+- **Docker**: For container validation
+- **Ubuntu**: Workflows run on `ubuntu-latest`
 
-## Artefactos Generados
+## Generated Artifacts
 
-Los workflows generan y almacenan los siguientes artefactos:
+The workflows generate and store the following artifacts:
 
-- **Test Results**: Resultados de pruebas y cobertura
+- **Test Results**: Test results and coverage
 - **Docker Artifacts**: Dockerfile, .dockerignore, docker-compose
-- **Build Outputs**: Archivos compilados y distribuidos
-- **Logs**: Logs de ejecución y errores
+- **Build Outputs**: Compiled and distributed files
+- **Logs**: Execution logs and errors
 
-## Configuración de Cache
+## Cache Configuration
 
-Se utiliza el cache de Yarn para optimizar las instalaciones:
+Yarn cache is used to optimize installations:
 
 ```yaml
 - name: Setup Node.js ${{ matrix.node-version }}
@@ -95,43 +95,43 @@ Se utiliza el cache de Yarn para optimizar las instalaciones:
     cache: 'yarn'
 ```
 
-## Monitoreo y Reportes
+## Monitoring and Reports
 
-- **GitHub Step Summary**: Reportes detallados en la interfaz de GitHub
-- **Codecov**: Cobertura de código
-- **Artefactos**: Descarga de resultados y logs
-- **Notificaciones**: Estado de ejecución en pull requests
+- **GitHub Step Summary**: Detailed reports in GitHub interface
+- **Codecov**: Code coverage
+- **Artifacts**: Download of results and logs
+- **Notifications**: Execution status in pull requests
 
-## Solución de Problemas
+## Troubleshooting
 
-### Problemas Comunes
+### Common Issues
 
-1. **Fallos de TypeScript**: Verificar que `yarn tsc` esté disponible
-2. **Errores de Docker**: Verificar permisos y configuración de Docker
-3. **Fallos de Yarn**: Verificar versión de Yarn y lockfile
-4. **Problemas de ZK**: Verificar estructura de directorios de pruebas ZK
+1. **TypeScript Failures**: Verify that `yarn tsc` is available
+2. **Docker Errors**: Verify Docker permissions and configuration
+3. **Yarn Failures**: Verify Yarn version and lockfile
+4. **ZK Issues**: Verify ZK test directory structure
 
 ### Debugging
 
-- Revisar logs completos en GitHub Actions
-- Verificar artefactos generados
-- Comprobar configuración de Node.js y Yarn
-- Validar estructura del proyecto
+- Review complete logs in GitHub Actions
+- Verify generated artifacts
+- Check Node.js and Yarn configuration
+- Validate project structure
 
-## Personalización
+## Customization
 
-Para personalizar los workflows:
+To customize the workflows:
 
-1. Modificar triggers en la sección `on:`
-2. Ajustar versiones de Node.js en `strategy.matrix`
-3. Agregar nuevos jobs según necesidades
-4. Modificar timeouts y recursos según requerimientos
+1. Modify triggers in the `on:` section
+2. Adjust Node.js versions in `strategy.matrix`
+3. Add new jobs as needed
+4. Modify timeouts and resources according to requirements
 
-## Contribución
+## Contribution
 
-Al modificar los workflows:
+When modifying the workflows:
 
-1. Probar cambios en ramas de feature
-2. Verificar compatibilidad con Yarn
-3. Mantener consistencia con otros repos del proyecto
-4. Documentar cambios en este README
+1. Test changes in feature branches
+2. Verify Yarn compatibility
+3. Maintain consistency with other project repos
+4. Document changes in this README
