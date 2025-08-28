@@ -12,11 +12,24 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "allowJs": true,
+    "checkJs": false
   },
   "ts-node": {
     "esm": true
   },
-  "include": ["src/**/*", "test/service.test.ts", "test/encryption.test.ts"],
-  "exclude": ["node_modules", "dist", "test"]
+  "include": [
+    "src/**/*",
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test/**/*",
+    "scripts/**/*",
+    "coverage",
+    ".yarn",
+    "*.js",
+    "*.js.map"
+  ]
 } 

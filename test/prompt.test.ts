@@ -98,6 +98,7 @@ describe('prompt.ts', () => {
   describe('getPrompt', () => {
     it('should throw error for unknown prompt', () => {
       const request: GetPromptRequest = {
+        method: 'prompts/get',
         params: {
           name: 'unknownPrompt',
           arguments: {}
@@ -110,6 +111,7 @@ describe('prompt.ts', () => {
     describe('status prompt', () => {
       it('should return correct messages for status prompt', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'status',
             arguments: {}
@@ -135,6 +137,7 @@ describe('prompt.ts', () => {
     describe('login prompt', () => {
       it('should return initial login message when no email provided', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'login',
             arguments: {}
@@ -150,6 +153,7 @@ describe('prompt.ts', () => {
 
       it('should return verification message when email provided but no OTP', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'login',
             arguments: {
@@ -168,6 +172,7 @@ describe('prompt.ts', () => {
 
       it('should return verification message when email and OTP provided', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'login',
             arguments: {
@@ -188,6 +193,7 @@ describe('prompt.ts', () => {
     describe('listServices prompt', () => {
       it('should return correct messages for listServices prompt', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'listServices',
             arguments: {}
@@ -205,12 +211,13 @@ describe('prompt.ts', () => {
     describe('registerService prompt', () => {
       it('should return correct messages for registerService prompt with all arguments', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'registerService',
             arguments: {
               name: 'Test Service',
               type: 'AI_ANALYSIS',
-              price: 100,
+              price: '100',
               address: 'test-wallet-address',
               privacySettings: 'public',
               serviceId: 'test-service-id'
@@ -234,6 +241,7 @@ describe('prompt.ts', () => {
     describe('storeServiceContent prompt', () => {
       it('should return correct messages for storeServiceContent prompt', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'storeServiceContent',
             arguments: {
@@ -255,6 +263,7 @@ describe('prompt.ts', () => {
     describe('servicePayment prompt', () => {
       it('should return initial payment message when missing required arguments', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'servicePayment',
             arguments: {}
@@ -272,11 +281,12 @@ describe('prompt.ts', () => {
 
       it('should return payment confirmation when all arguments provided', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'servicePayment',
             arguments: {
               serviceId: 'test-service-id',
-              amount: 100,
+              amount: '100',
               transactionId: 'test-transaction-id',
               paymentMessageId: 'test-payment-message-id'
             }
@@ -296,6 +306,7 @@ describe('prompt.ts', () => {
     describe('queryServiceDelivery prompt', () => {
       it('should return initial query message when missing required arguments', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'queryServiceDelivery',
             arguments: {}
@@ -311,6 +322,7 @@ describe('prompt.ts', () => {
 
       it('should return query confirmation when all arguments provided', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'queryServiceDelivery',
             arguments: {
@@ -332,6 +344,7 @@ describe('prompt.ts', () => {
     describe('provideServiceFeedback prompt', () => {
       it('should return correct messages for provideServiceFeedback prompt', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'provideServiceFeedback',
             arguments: {}
@@ -349,6 +362,7 @@ describe('prompt.ts', () => {
     describe('disableService prompt', () => {
       it('should return correct messages for disableService prompt', () => {
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'disableService',
             arguments: {}
@@ -377,6 +391,7 @@ describe('prompt.ts', () => {
         (PROMPTS as any)['testPrompt'] = tempPrompt;
 
         const request: GetPromptRequest = {
+          method: 'prompts/get',
           params: {
             name: 'testPrompt',
             arguments: {}
@@ -425,6 +440,7 @@ describe('prompt.ts', () => {
   describe('Edge cases', () => {
     it('should handle empty arguments object', () => {
       const request: GetPromptRequest = {
+        method: 'prompts/get',
         params: {
           name: 'status',
           arguments: {}
@@ -436,6 +452,7 @@ describe('prompt.ts', () => {
 
     it('should handle null arguments', () => {
       const request: GetPromptRequest = {
+        method: 'prompts/get',
         params: {
           name: 'login',
           arguments: null as any
@@ -447,6 +464,7 @@ describe('prompt.ts', () => {
 
     it('should handle undefined arguments', () => {
       const request: GetPromptRequest = {
+        method: 'prompts/get',
         params: {
           name: 'login',
           arguments: undefined as any
@@ -458,6 +476,7 @@ describe('prompt.ts', () => {
 
     it('should handle boolean conversion for registrationConfirmed', () => {
       const request: GetPromptRequest = {
+        method: 'prompts/get',
         params: {
           name: 'login',
           arguments: {

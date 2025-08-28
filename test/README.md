@@ -2,6 +2,8 @@
 
 This directory contains the comprehensive unit test suite for the Agent Communication MCP project. The tests are written using Jest and cover all major components of the system.
 
+> **Note**: For end-to-end testing that requires authentication, see the [Testing Documentation](../doc/testing/README.md) and [E2E Authentication Script](../doc/testing/e2e-authentication.md).
+
 ## Test Structure
 
 ### Setup and Configuration
@@ -98,6 +100,8 @@ Tests error formatting utilities:
 - Error categorization
 - User-friendly error messages
 
+
+
 #### **`utils/server-config.test.ts`** (5.2KB, 179 lines)
 Tests server configuration management:
 - Environment variable validation
@@ -140,9 +144,6 @@ Tests received content handling:
 # Run all tests
 yarn test
 
-# Run tests in watch mode
-yarn test:watch
-
 # Run tests with coverage
 yarn test:coverage
 
@@ -183,15 +184,6 @@ The test suite requires the following environment variables (automatically set i
 - Custom matchers for complex objects
 - Error throwing validation
 - Async operation testing
-
-## Contributing
-
-When adding new tests:
-1. Follow the existing naming conventions
-2. Include both positive and negative test cases
-3. Mock external dependencies appropriately
-4. Add tests for error conditions
-5. Update this README if adding new test categories
 
 ## Troubleshooting
 

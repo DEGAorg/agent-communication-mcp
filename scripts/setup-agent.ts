@@ -3,7 +3,7 @@ import { program } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { FileManager, FileType } from '../src/utils/file-manager.js';
-import { KeyPairGenerator } from '../src/cli/keys.ts';
+import { KeyPairGenerator } from '../src/cli/keys.js';
 import chalk from 'chalk';
 
 program

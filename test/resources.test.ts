@@ -22,7 +22,7 @@ describe('resources.ts', () => {
       expect(DEFAULT_AGENT_RESOURCE.description).toContain('communication capabilities');
       expect(DEFAULT_AGENT_RESOURCE.mimeType).toBe('application/json');
       
-      const content = JSON.parse(DEFAULT_AGENT_RESOURCE.content);
+      const content = JSON.parse(DEFAULT_AGENT_RESOURCE.content as string);
       expect(content).toHaveProperty('capabilities');
       expect(content).toHaveProperty('state');
       expect(content.capabilities).toEqual({
@@ -43,7 +43,7 @@ describe('resources.ts', () => {
       expect(SERVICES_LIST_RESOURCE.description).toContain('Browse and search');
       expect(SERVICES_LIST_RESOURCE.mimeType).toBe('application/json');
       
-      const content = JSON.parse(SERVICES_LIST_RESOURCE.content);
+      const content = JSON.parse(SERVICES_LIST_RESOURCE.content as string);
       expect(content).toHaveProperty('filters');
       expect(content).toHaveProperty('service_types');
       expect(content.filters).toEqual(['topics', 'price_range', 'service_type', 'status']);
@@ -59,7 +59,7 @@ describe('resources.ts', () => {
       expect(SERVICE_REGISTRATION_RESOURCE.description).toContain('Register and manage');
       expect(SERVICE_REGISTRATION_RESOURCE.mimeType).toBe('application/json');
       
-      const content = JSON.parse(SERVICE_REGISTRATION_RESOURCE.content);
+      const content = JSON.parse(SERVICE_REGISTRATION_RESOURCE.content as string);
       expect(content).toHaveProperty('required_fields');
       expect(content.required_fields).toEqual([
         'name', 'type', 'price', 'description', 'privacy_settings'
@@ -72,7 +72,7 @@ describe('resources.ts', () => {
       expect(SERVICE_CONTENT_RESOURCE.description).toContain('Manage service content');
       expect(SERVICE_CONTENT_RESOURCE.mimeType).toBe('application/json');
       
-      const content = JSON.parse(SERVICE_CONTENT_RESOURCE.content);
+      const content = JSON.parse(SERVICE_CONTENT_RESOURCE.content as string);
       expect(content).toHaveProperty('required_fields');
       expect(content.required_fields).toEqual([
         'service_id', 'content', 'version'
@@ -85,7 +85,7 @@ describe('resources.ts', () => {
       expect(SERVICE_PAYMENT_RESOURCE.description).toContain('Process payments');
       expect(SERVICE_PAYMENT_RESOURCE.mimeType).toBe('application/json');
       
-      const content = JSON.parse(SERVICE_PAYMENT_RESOURCE.content);
+      const content = JSON.parse(SERVICE_PAYMENT_RESOURCE.content as string);
       expect(content).toHaveProperty('required_fields');
       expect(content).toHaveProperty('note');
       expect(content.required_fields).toEqual(['service_id', 'amount']);
@@ -98,7 +98,7 @@ describe('resources.ts', () => {
       expect(SERVICE_DELIVERY_RESOURCE.description).toContain('Track and manage');
       expect(SERVICE_DELIVERY_RESOURCE.mimeType).toBe('application/json');
       
-      const content = JSON.parse(SERVICE_DELIVERY_RESOURCE.content);
+      const content = JSON.parse(SERVICE_DELIVERY_RESOURCE.content as string);
       expect(content).toHaveProperty('required_fields');
       expect(content.required_fields).toEqual([
         'payment_message_id', 'service_id'
@@ -111,7 +111,7 @@ describe('resources.ts', () => {
       expect(DATA_REVELATION_RESOURCE.description).toContain('Securely reveal');
       expect(DATA_REVELATION_RESOURCE.mimeType).toBe('application/json');
       
-      const content = JSON.parse(DATA_REVELATION_RESOURCE.content);
+      const content = JSON.parse(DATA_REVELATION_RESOURCE.content as string);
       expect(content).toHaveProperty('security_features');
       expect(content.security_features).toEqual([
         'encryption', 'access_control', 'privacy_settings'
@@ -124,7 +124,7 @@ describe('resources.ts', () => {
       expect(AVAILABLE_TOOLS_RESOURCE.description).toContain('List of tools');
       expect(AVAILABLE_TOOLS_RESOURCE.mimeType).toBe('application/json');
       
-      const content = JSON.parse(AVAILABLE_TOOLS_RESOURCE.content);
+      const content = JSON.parse(AVAILABLE_TOOLS_RESOURCE.content as string);
       expect(content).toHaveProperty('tool_categories');
       expect(content.tool_categories).toEqual([
         'authentication', 'marketplace', 'content', 'payment', 
@@ -154,7 +154,7 @@ describe('resources.ts', () => {
 
     it('should have valid JSON content for all resources', () => {
       RESOURCES.forEach(resource => {
-        expect(() => JSON.parse(resource.content)).not.toThrow();
+        expect(() => JSON.parse(resource.content as string)).not.toThrow();
       });
     });
 
@@ -260,7 +260,7 @@ describe('resources.ts', () => {
       expect(result.description).toBe('List of tools available for agent communication');
       expect(result.mimeType).toBe('application/json');
       
-      const content = JSON.parse(result.content);
+      const content = JSON.parse(result.content as string);
       expect(Array.isArray(content)).toBe(true);
       expect(content.length).toBeGreaterThanOrEqual(2);
       expect(content.some((t: any) => t.name === 'status')).toBe(true);
@@ -306,7 +306,7 @@ describe('resources.ts', () => {
   describe('Resource content validation', () => {
     it('should have valid JSON content in all resources', () => {
       RESOURCES.forEach(resource => {
-        const content = JSON.parse(resource.content);
+        const content = JSON.parse(resource.content as string);
         expect(content).toBeDefined();
         expect(typeof content).toBe('object');
       });
@@ -321,7 +321,7 @@ describe('resources.ts', () => {
     it('should have non-empty names and descriptions', () => {
       RESOURCES.forEach(resource => {
         expect(resource.name.length).toBeGreaterThan(0);
-        expect(resource.description.length).toBeGreaterThan(0);
+        expect(resource.description?.length).toBeGreaterThan(0);
       });
     });
 
@@ -336,13 +336,13 @@ describe('resources.ts', () => {
     it('should handle resources with special characters in content', () => {
       // Test that JSON parsing works with various content types
       RESOURCES.forEach(resource => {
-        const content = JSON.parse(resource.content);
+        const content = JSON.parse(resource.content as string);
         expect(content).toBeDefined();
       });
     });
 
     it('should handle resources with nested objects in content', () => {
-      const defaultResource = JSON.parse(DEFAULT_AGENT_RESOURCE.content);
+      const defaultResource = JSON.parse(DEFAULT_AGENT_RESOURCE.content as string);
       expect(defaultResource.capabilities).toBeDefined();
       expect(defaultResource.state).toBeDefined();
       expect(typeof defaultResource.capabilities).toBe('object');
@@ -350,7 +350,7 @@ describe('resources.ts', () => {
     });
 
     it('should handle resources with arrays in content', () => {
-      const servicesResource = JSON.parse(SERVICES_LIST_RESOURCE.content);
+      const servicesResource = JSON.parse(SERVICES_LIST_RESOURCE.content as string);
       expect(Array.isArray(servicesResource.filters)).toBe(true);
       expect(Array.isArray(servicesResource.service_types)).toBe(true);
     });

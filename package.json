@@ -1,26 +1,20 @@
 {
-  "packageManager": "yarn@4.1.0",
+  "packageManager": "yarn@4.9.2",
   "type": "module",
   "scripts": {
     "build": "rm -rf dist && tsc && mkdir -p dist/zk/proofs && cp -r src/zk/proofs/* dist/zk/proofs/",
+    "tsc": "tsc",
     "start": "node --experimental-specifier-resolution=node dist/server.js",
-    "dev": "tsx src/server.ts",
     "dev:stdio": "tsx src/stdio-server.ts",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
-    "test:tools": "NODE_OPTIONS=--experimental-vm-modules jest test/tools.test.ts",
-    "test:encryption": "NODE_OPTIONS=--experimental-vm-modules jest test/encryption.test.ts",
     "test:file": "NODE_OPTIONS=--experimental-vm-modules jest",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "auth:setup": "tsx src/cli/auth.ts setup",
-    "auth:check": "tsx src/cli/auth.ts check",
-    "auth:retry": "tsx src/cli/auth.ts retry",
-    "service:register": "tsx src/cli/service.ts",
-    "service:register:test": "tsx src/cli/service.ts --test",
     "keys:generate": "tsx src/cli/keys.ts generate",
-    "setup:agent": "tsx scripts/setup-agent.ts"
+    "setup:agent": "tsx scripts/setup-agent.ts",
+    "e2e:auth": "tsx scripts/e2e-auth.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.1",
@@ -58,7 +52,7 @@
     "prettier": "^3.0.3",
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.2",
-    "tsx": "^4.19.3",
+    "tsx": "^4.20.4",
     "typescript": "^5.2.2"
   }
 }

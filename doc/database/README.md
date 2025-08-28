@@ -2,14 +2,20 @@
 
 This directory contains the SQL files needed to set up the Supabase database for the Agent Communication MCP server.
 
+## Directory Structure
+
+- `migrations/` - Database migration files (numbered in execution order)
+- `commands/` - Utility SQL commands and scripts
+- `README.md` - This setup guide
+
 ## Setup Steps
 
 1. Log in to your Supabase dashboard
 2. Navigate to the SQL Editor
 3. Execute the files in the following order:
-   - `01_tables.sql` - Creates the database tables
-   - `02_indexes.sql` - Creates necessary indexes
-   - `03_policies.sql` - Sets up Row Level Security (RLS) policies
+   - `migrations/01_tables.sql` - Creates the database tables
+   - `migrations/02_indexes.sql` - Creates necessary indexes
+   - `migrations/03_policies.sql` - Sets up Row Level Security (RLS) policies
 
 ## Database Schema
 
